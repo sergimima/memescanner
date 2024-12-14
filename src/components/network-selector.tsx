@@ -42,22 +42,22 @@ export function NetworkSelector({ value, onValueChange }: NetworkSelectorProps) 
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-[200px] justify-between"
+          className="w-[200px] justify-between bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/90 transition-all duration-200"
         >
           {selectedNetwork ? (
             <div className="flex items-center gap-2">
               {React.createElement(networkIcons[selectedNetwork.id], {
                 className: "h-4 w-4"
               })}
-              <span>{selectedNetwork.name}</span>
+              <span className="text-gray-700 dark:text-gray-200">{selectedNetwork.name}</span>
             </div>
           ) : (
             "Seleccionar Red"
           )}
-          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <ChevronDown className="ml-2 h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-2 bg-white dark:bg-gray-950 border shadow-lg">
+      <PopoverContent className="w-[200px] p-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-lg rounded-lg">
         <div className="space-y-1">
           {networks.map((network) => {
             const Icon = networkIcons[network.id]
@@ -69,10 +69,11 @@ export function NetworkSelector({ value, onValueChange }: NetworkSelectorProps) 
                   setOpen(false)
                 }}
                 className={cn(
-                  "w-full flex items-center justify-between px-2 py-1.5 text-sm rounded-sm",
-                  "hover:bg-accent hover:text-accent-foreground",
-                  "focus:bg-accent focus:text-accent-foreground focus:outline-none",
-                  value === network.id && "bg-accent text-accent-foreground"
+                  "w-full flex items-center justify-between px-3 py-2 text-sm rounded-md transition-all duration-200",
+                  "text-gray-700 dark:text-gray-200",
+                  "hover:bg-gray-50 dark:hover:bg-gray-800",
+                  "focus:outline-none focus:ring-2 focus:ring-indigo-500/50 dark:focus:ring-indigo-400/50",
+                  value === network.id && "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400"
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -80,7 +81,7 @@ export function NetworkSelector({ value, onValueChange }: NetworkSelectorProps) 
                   <span>{network.name}</span>
                 </div>
                 {value === network.id && (
-                  <Check className="h-4 w-4" />
+                  <Check className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                 )}
               </button>
             )

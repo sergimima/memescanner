@@ -561,9 +561,29 @@ MIT License
 ### Componentes Principales
 - [x] Header completo
   - [x] Selector de red (Ethereum, BSC, etc.)
-  - [ ] Selector tema claro/oscuro
+  - [x] Selector tema claro/oscuro
   - [ ] Conectar wallet
   - [ ] Menú de navegación
+
+### Diseño y Temas
+- [x] Modo Claro/Oscuro
+  - [x] Transiciones suaves
+  - [x] Gradientes adaptativos
+  - [x] Detección automática del tema
+  - [x] Efectos de glassmorphism
+
+### Tarjetas y Contenedores
+- [x] TokenCard
+  - [x] Diseño moderno con glassmorphism
+  - [x] Efectos hover suaves
+  - [x] Gradientes en scores
+  - [x] Contraste optimizado
+
+### Fondos y Gradientes
+- [x] Fondo principal adaptativo
+  - [x] Gradientes personalizados por tema
+  - [x] Transiciones suaves
+  - [x] Contraste mejorado
 
 ### Componentes Avanzados
 - [ ] Tablas ordenables y filtrables
@@ -578,11 +598,11 @@ MIT License
 - [ ] Placeholders para imágenes
 
 ### Animaciones y Transiciones
-- [ ] Transiciones entre rutas
+- [x] Transiciones de tema
 - [ ] Fade in/out de elementos
 - [ ] Slide para drawers
 - [ ] Scale para modales
-- [ ] Microinteracciones (hover states, focus rings)
+- [x] Microinteracciones (hover states)
 
 ### Accesibilidad
 - [ ] WCAG 2.1 AA compliant
@@ -909,9 +929,9 @@ MIT License
 ## 📝 Estado del Desarrollo UI
 
 ### Componentes Principales
-- [ ] Header completo
+- [x] Header completo
   - [x] Selector de red (Ethereum, BSC, etc.)
-  - [ ] Selector tema claro/oscuro
+  - [x] Selector tema claro/oscuro
   - [ ] Conectar wallet
   - [ ] Menú de navegación
 
@@ -928,11 +948,11 @@ MIT License
 - [ ] Placeholders para imágenes
 
 ### Animaciones y Transiciones
-- [ ] Transiciones entre rutas
+- [x] Transiciones de tema
 - [ ] Fade in/out de elementos
 - [ ] Slide para drawers
 - [ ] Scale para modales
-- [ ] Microinteracciones (hover states, focus rings)
+- [x] Microinteracciones (hover states)
 
 ### Accesibilidad
 - [ ] WCAG 2.1 AA compliant

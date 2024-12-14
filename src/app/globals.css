@@ -1,8 +1,16 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
- 
+
 @layer base {
+  * {
+    @apply transition-colors duration-300;
+  }
+
+  body {
+    @apply antialiased;
+  }
+
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
@@ -25,7 +33,7 @@
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
   }
- 
+
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -47,4 +55,15 @@
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
   }
+}
+
+.glassmorphism {
+  @apply bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm;
+  @apply border border-gray-100 dark:border-gray-800;
+  @apply shadow-lg shadow-purple-500/5 dark:shadow-blue-500/5;
+}
+
+.gradient-text {
+  @apply bg-gradient-to-r from-purple-600 to-blue-600 dark:from-purple-400 dark:to-blue-400;
+  @apply text-transparent bg-clip-text;
 }
