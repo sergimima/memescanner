@@ -20,8 +20,6 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
-    "@web3modal/ethereum": "^2.7.1",
-    "@web3modal/react": "^2.7.1",
     "@web3modal/wagmi": "^5.1.11",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
@@ -40,6 +38,7 @@
     "wagmi": "^2.14.1"
   },
   "devDependencies": {
-    "@shadcn/ui": "^0.0.4"
+    "@shadcn/ui": "^0.0.4",
+    "pino-pretty": "^13.0.0"
   }
 }
