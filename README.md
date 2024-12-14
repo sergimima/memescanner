@@ -523,6 +523,73 @@ import {
   - Click feedback
   - Success/Error feedback
 
+## 📈 Roadmap
+1. **Fase 1** (Q1 2024): 
+   - Setup inicial y soporte Solana
+   - Implementación de criterios básicos
+   - UI/UX básica
+
+2. **Fase 2** (Q2 2024): 
+   - Integración multi-chain
+   - Sistema de scoring
+   - Análisis de contratos
+
+3. **Fase 3** (Q3 2024): 
+   - Sistema de alertas
+   - Análisis social
+   - API pública
+
+4. **Fase 4** (Q4 2024): 
+   - Machine Learning para detección
+   - Predicciones automáticas
+   - Dashboard avanzado
+
+## 🔐 Seguridad y Limitaciones
+- Rate limits en APIs: 5 calls/segundo
+- Máximo de tokens monitoreados: 1000/chain
+- Tiempo mínimo de análisis: 24h
+- Refresh rate de datos: 5 minutos
+
+## 🤝 Contribución
+Las contribuciones son bienvenidas. Por favor, revisa las guías de contribución antes de empezar.
+
+## 📄 Licencia
+MIT License
+
+## 📝 Estado del Desarrollo UI
+
+### Componentes Principales
+- [x] Header completo
+  - [x] Selector de red (Ethereum, BSC, etc.)
+  - [ ] Selector tema claro/oscuro
+  - [ ] Conectar wallet
+  - [ ] Menú de navegación
+
+### Componentes Avanzados
+- [ ] Tablas ordenables y filtrables
+- [ ] Gráficos de velas (TradingView)
+- [ ] Heatmaps de actividad
+- [ ] Indicadores técnicos
+
+### Estados de Carga
+- [ ] Skeletons para datos
+- [ ] Spinners para acciones
+- [ ] Progress bars para procesos
+- [ ] Placeholders para imágenes
+
+### Animaciones y Transiciones
+- [ ] Transiciones entre rutas
+- [ ] Fade in/out de elementos
+- [ ] Slide para drawers
+- [ ] Scale para modales
+- [ ] Microinteracciones (hover states, focus rings)
+
+### Accesibilidad
+- [ ] WCAG 2.1 AA compliant
+- [ ] Soporte para lectores de pantalla
+- [ ] Navegación por teclado
+- [ ] Etiquetas ARIA
+
 ## 📦 Dependencias y Versiones
 
 ### Core
@@ -838,3 +905,37 @@ Las contribuciones son bienvenidas. Por favor, revisa las guías de contribució
 
 ## 📄 Licencia
 MIT License
+
+## 📝 Estado del Desarrollo UI
+
+### Componentes Principales
+- [ ] Header completo
+  - [x] Selector de red (Ethereum, BSC, etc.)
+  - [ ] Selector tema claro/oscuro
+  - [ ] Conectar wallet
+  - [ ] Menú de navegación
+
+### Componentes Avanzados
+- [ ] Tablas ordenables y filtrables
+- [ ] Gráficos de velas (TradingView)
+- [ ] Heatmaps de actividad
+- [ ] Indicadores técnicos
+
+### Estados de Carga
+- [ ] Skeletons para datos
+- [ ] Spinners para acciones
+- [ ] Progress bars para procesos
+- [ ] Placeholders para imágenes
+
+### Animaciones y Transiciones
+- [ ] Transiciones entre rutas
+- [ ] Fade in/out de elementos
+- [ ] Slide para drawers
+- [ ] Scale para modales
+- [ ] Microinteracciones (hover states, focus rings)
+
+### Accesibilidad
+- [ ] WCAG 2.1 AA compliant
+- [ ] Soporte para lectores de pantalla
+- [ ] Navegación por teclado
+- [ ] Etiquetas ARIA
