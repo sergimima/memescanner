@@ -50,10 +50,11 @@ export default function TokenPage() {
     )
   }
 
+  // Formatear los holders para la visualización
   const holdersData = {
     holders: token.analysis.holders.map((holder: TokenHolder) => ({
       address: holder.address,
-      balance: holder.balance,
+      balance: Number(holder.balance).toLocaleString(),
       percentage: holder.percentage
     })),
     totalHolders: token.analysis.holders.length
@@ -110,7 +111,7 @@ export default function TokenPage() {
             symbol: token.symbol,
             contract: token.address,
             chain: token.network,
-            totalSupply: token.totalSupply,
+            totalSupply: Number(token.totalSupply).toLocaleString(),
             marketCap: token.analysis.marketCap,
             price: token.analysis.price
           }} />

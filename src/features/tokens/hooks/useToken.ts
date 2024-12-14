@@ -63,7 +63,7 @@ export function useToken(address: string): TokenData {
         setData(prev => ({
           ...prev,
           loading: false,
-          error: err as Error
+          error: err instanceof Error ? err : new Error('Error desconocido al obtener el token')
         }))
       }
     }
