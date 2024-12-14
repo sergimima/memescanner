@@ -4,6 +4,7 @@ import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Header } from '@/components/layout/header'
 import { Web3Provider } from '@/components/providers/web3-provider'
+import { NetworkProvider } from '@/features/network/network-context'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -20,14 +21,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <Web3Provider>
-          <ThemeProvider>
-            <div className="relative flex min-h-screen flex-col">
-              <Header />
-              <main className="flex-1">{children}</main>
-            </div>
-          </ThemeProvider>
-        </Web3Provider>
+        <ThemeProvider>
+          <Web3Provider>
+            <NetworkProvider>
+              <div className="relative flex min-h-screen flex-col">
+                <Header />
+                <main className="flex-1">{children}</main>
+              </div>
+            </NetworkProvider>
+          </Web3Provider>
+        </ThemeProvider>
       </body>
     </html>
   )

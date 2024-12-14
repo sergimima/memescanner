@@ -516,12 +516,39 @@ import {
   - Fade in/out de elementos
   - Slide para drawers
   - Scale para modales
+  - Microinteracciones (hover states)
 
-- **Microinteracciones**:
-  - Hover states
-  - Focus rings
-  - Click feedback
-  - Success/Error feedback
+### Componentes Principales
+- [x] Header completo
+  - [x] Selector de red (Ethereum, BSC, etc.)
+  - [x] Selector tema claro/oscuro
+  - [x] Conectar wallet (Web3Modal v4)
+  - [ ] Menú de navegación
+
+### Componentes Avanzados
+- [ ] Tablas ordenables y filtrables
+- [ ] Gráficos de velas (TradingView)
+- [ ] Heatmaps de actividad
+- [ ] Indicadores técnicos
+
+### Estados de Carga
+- [ ] Skeletons para datos
+- [ ] Spinners para acciones
+- [ ] Progress bars para procesos
+- [ ] Placeholders para imágenes
+
+### Animaciones y Transiciones
+- [x] Transiciones de tema
+- [ ] Fade in/out de elementos
+- [ ] Slide para drawers
+- [ ] Scale para modales
+- [x] Microinteracciones (hover states)
+
+### Accesibilidad
+- [ ] WCAG 2.1 AA compliant
+- [ ] Soporte para lectores de pantalla
+- [ ] Navegación por teclado
+- [ ] Etiquetas ARIA
 
 ## 📈 Roadmap
 1. **Fase 1** (Q1 2024): 
@@ -562,28 +589,8 @@ MIT License
 - [x] Header completo
   - [x] Selector de red (Ethereum, BSC, etc.)
   - [x] Selector tema claro/oscuro
-  - [ ] Conectar wallet
+  - [x] Conectar wallet (Web3Modal v4)
   - [ ] Menú de navegación
-
-### Diseño y Temas
-- [x] Modo Claro/Oscuro
-  - [x] Transiciones suaves
-  - [x] Gradientes adaptativos
-  - [x] Detección automática del tema
-  - [x] Efectos de glassmorphism
-
-### Tarjetas y Contenedores
-- [x] TokenCard
-  - [x] Diseño moderno con glassmorphism
-  - [x] Efectos hover suaves
-  - [x] Gradientes en scores
-  - [x] Contraste optimizado
-
-### Fondos y Gradientes
-- [x] Fondo principal adaptativo
-  - [x] Gradientes personalizados por tema
-  - [x] Transiciones suaves
-  - [x] Contraste mejorado
 
 ### Componentes Avanzados
 - [ ] Tablas ordenables y filtrables
@@ -932,7 +939,7 @@ MIT License
 - [x] Header completo
   - [x] Selector de red (Ethereum, BSC, etc.)
   - [x] Selector tema claro/oscuro
-  - [ ] Conectar wallet
+  - [x] Conectar wallet (Web3Modal v4)
   - [ ] Menú de navegación
 
 ### Componentes Avanzados
