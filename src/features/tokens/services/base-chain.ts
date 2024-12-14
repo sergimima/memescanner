@@ -41,7 +41,7 @@ export abstract class BaseChainService {
     else if (analysis.liquidityUSD >= 5000) liquidity += 5
 
     // Community Score (30 points max)
-    if (analysis.holders >= 500) community += 10
+    if (analysis.holders.length >= 500) community += 10
     if (analysis.social?.followers && analysis.social.followers >= 1000) community += 10
     if (analysis.social?.engagement && analysis.social.engagement >= 0.5) community += 10
 
