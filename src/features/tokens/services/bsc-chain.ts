@@ -54,6 +54,12 @@ interface TokenEvent {
   topics: string[];
 }
 
+interface Holder {
+  address: string;
+  balance: string;
+  percentage: number;
+}
+
 export class BSCChainService extends BaseChainService {
   private static instance: BSCChainService | null = null;
   readonly chainId = '56'
@@ -520,24 +526,32 @@ export class BSCChainService extends BaseChainService {
   private async getHolders(address: string) {
     return this.retryWithBackoff(async () => {
       try {
-        // TODO: Implementar obtención real de datos de holders
-        return [
-          {
-            address: '0x1234567890abcdef',
-            balance: '1000000000000000000',
-            percentage: 50
-          },
-          {
-            address: '0x9876543210fedcba',
-            balance: '500000000000000000',
-            percentage: 25
+        const response = await axios.get(`${this.scanApiUrl}`, {
+          params: {
+            module: 'token',
+            action: 'tokenholderlist',
+            contractaddress: address,
+            apikey: this.scanApiKey,
+            page: 1,
+            offset: 100
           }
-        ]
+        });
+
+        if (response.data.status === '1' && response.data.result) {
+          const totalSupplyResult = await this.getTokenContract(address).totalSupply();
+          return (response.data.result as { address: string; balance: string }[]).map(holder => ({
+            address: holder.address,
+            balance: holder.balance,
+            percentage: (Number(holder.balance) / Number(totalSupplyResult)) * 100
+          }));
+        }
+        
+        return [];
       } catch (error) {
-        console.error(`Error obteniendo datos de holders para ${address}:`, error)
-        return []
+        console.error(`Error obteniendo datos de holders para ${address}:`, error);
+        return [];
       }
-    }, 5)
+    }, 5);
   }
 
   private async getLiquidityData(address: string) {
@@ -593,7 +607,8 @@ export class BSCChainService extends BaseChainService {
         hasHoneypot: false,
         hasUnlimitedMint: false,
         hasTradingPause: false,
-        maxTaxPercentage: 0
+        maxTaxPercentage: 0,
+        hasDangerousFunctions: false
       },
       ownership: {
         renounced: false,
@@ -732,7 +747,7 @@ export class BSCChainService extends BaseChainService {
         // Procesar cada token único
         for (const address of uniqueAddresses) {
           try {
-            console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Obteniendo datos del token:`, address);
+            console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Obteniendo datos del token: ${address}`);
             const tokenData = await this.getTokenData(address);
             console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Datos obtenidos para ${address}:`, tokenData);
             

@@ -19,11 +19,16 @@ export default function TokenPage() {
   const token = tokens.find((t: TokenBase) => t.address.toLowerCase() === address.toLowerCase());
 
   if (!token) {
-    return <div>Token no encontrado</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h1 className="text-2xl font-bold mb-4">Token no encontrado</h1>
+        <p className="text-gray-600">No se pudo encontrar el token con la dirección: {address}</p>
+      </div>
+    );
   }
 
-  // Valores por defecto para analysis y score
-  const defaultAnalysis: TokenAnalysis = {
+  // Asegurarnos de que el análisis existe
+  const analysis = token.analysis || {
     liquidityUSD: 0,
     holders: [],
     buyCount: 0,
@@ -49,19 +54,13 @@ export default function TokenPage() {
     },
     distribution: {
       maxWalletPercentage: 0,
-      teamWalletPercentage: 0,
-      top10HoldersPercentage: 0
+      topHolders: []
     },
     social: {
-      followers: 0,
-      engagement: 0,
-      sentiment: {
-        positive: 0,
-        neutral: 0,
-        negative: 0
-      }
-    },
-    liquidityLocked: false
+      telegram: '',
+      twitter: '',
+      website: ''
+    }
   };
 
   const defaultScore: TokenScore = {
@@ -71,7 +70,6 @@ export default function TokenPage() {
     community: 0
   };
 
-  const analysis = token.analysis || defaultAnalysis;
   const score = token.score || defaultScore;
 
   // Formatear los holders para la visualización
@@ -86,17 +84,17 @@ export default function TokenPage() {
 
   const socialData = {
     twitter: {
-      followers: analysis.social?.followers ?? 0,
-      engagement: analysis.social?.engagement ?? 0
+      followers: Number(analysis.social?.twitter) || 0,
+      engagement: Number(analysis.social?.twitter) || 0
     },
     telegram: {
-      members: analysis.social?.followers ?? 0,
-      activeUsers: analysis.social?.engagement ?? 0
+      members: Number(analysis.social?.telegram) || 0,
+      activeUsers: Number(analysis.social?.telegram) || 0
     },
     sentiment: {
-      positive: analysis.social?.sentiment?.positive ?? 0,
-      neutral: analysis.social?.sentiment?.neutral ?? 0,
-      negative: analysis.social?.sentiment?.negative ?? 0
+      positive: Number(analysis.social?.twitter) || 0,
+      neutral: Number(analysis.social?.twitter) || 0,
+      negative: Number(analysis.social?.twitter) || 0
     }
   };
 
@@ -115,7 +113,7 @@ export default function TokenPage() {
       },
       {
         name: 'Liquidez Bloqueada',
-        passed: analysis.liquidityLocked,
+        passed: analysis.lockedLiquidity.verified,
         description: 'La liquidez está bloqueada en una plataforma confiable'
       },
       {

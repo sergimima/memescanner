@@ -24,20 +24,12 @@ export interface TokenAnalysis {
   };
   distribution: {
     maxWalletPercentage: number;
-    teamWalletPercentage: number;
-    top10HoldersPercentage: number;
+    topHolders: TokenHolder[];
   };
   social: {
-    telegram?: string;
-    twitter?: string;
-    website?: string;
-    followers: number;
-    engagement: number;
-    sentiment: {
-      positive: number;
-      neutral: number;
-      negative: number;
-    };
+    telegram: string;
+    twitter: string;
+    website: string;
   };
   liquidityLocked: boolean;
 }
