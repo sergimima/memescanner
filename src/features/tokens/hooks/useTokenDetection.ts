@@ -6,7 +6,20 @@ import { BSCChainService } from '../services/bsc-chain'
 import { useNetwork } from '@/features/network/network-context'
 
 export function useTokenDetection() {
-  const [tokens, setTokens] = useState<TokenBase[]>([])
+  const [tokens, setTokens] = useState<TokenBase[]>(() => {
+    // Cargar tokens guardados al inicializar el estado
+    try {
+      const savedTokensJson = localStorage.getItem('memetracker_tokens');
+      if (savedTokensJson) {
+        const savedTokens = JSON.parse(savedTokensJson);
+        console.log(`[${new Date().toLocaleTimeString()}] Cargando ${savedTokens.length} tokens guardados en el estado inicial`);
+        return savedTokens;
+      }
+    } catch (error) {
+      console.error(`[${new Date().toLocaleTimeString()}] Error cargando tokens guardados en el estado inicial:`, error);
+    }
+    return [];
+  })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const { network } = useNetwork()
@@ -58,15 +71,20 @@ export function useTokenDetection() {
   useEffect(() => {
     const handleNewToken = (event: CustomEvent<{ token: TokenBase }>) => {
       console.log('[useTokenDetection] Nuevo token detectado:', event.detail.token);
-      addToken(event.detail.token);
+      setTokens(prevTokens => [event.detail.token, ...prevTokens]);
     };
 
-    // Añadir el listener
-    window.addEventListener('newTokenFound', handleNewToken as EventListener);
+    const handleTokensLoaded = (event: CustomEvent<{ tokens: TokenBase[] }>) => {
+      setTokens(event.detail.tokens);
+    };
 
-    // Limpiar el listener cuando el componente se desmonte
+    // Escuchar eventos
+    window.addEventListener('newTokenFound', handleNewToken as EventListener);
+    window.addEventListener('tokensLoaded', handleTokensLoaded as EventListener);
+
     return () => {
       window.removeEventListener('newTokenFound', handleNewToken as EventListener);
+      window.removeEventListener('tokensLoaded', handleTokensLoaded as EventListener);
     };
   }, []);
 

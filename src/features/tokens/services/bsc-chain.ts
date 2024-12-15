@@ -5,6 +5,7 @@ import { bsc } from 'viem/chains'
 import axios from 'axios'
 import { BSC_RPC_URLS, getRandomRPC } from '@/config/rpc'
 import { WebSocketService } from './websocket-service'
+import { ethers } from 'ethers';
 
 // ABI mínimo para verificar tokens
 const ERC20_ABI = parseAbi([
@@ -56,19 +57,37 @@ interface TokenEvent {
 export class BSCChainService extends BaseChainService {
   private static instance: BSCChainService | null = null;
   readonly chainId = '56'
-  readonly chainName = 'bsc'
+  readonly chainName = 'BSC'
   readonly scanApiUrl = 'https://api.bscscan.com/api'
   readonly scanApiKey = process.env.NEXT_PUBLIC_BSCSCAN_API_KEY || ''
   private wsService: WebSocketService;
   private processedTransactions = new Set<string>();
   private client: ReturnType<typeof createPublicClient> | null = null;
-  private readonly STORAGE_KEY = 'memetracker_tokens';
+  private readonly STORAGE_KEY = 'bsc_tokens';
+  private provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_BSC_RPC_URL);
 
   private constructor() {
     super();
+    this.processedTransactions = new Set();
+    this.chainName = 'BSC';
+    this.STORAGE_KEY = 'bsc_tokens';
+    this.provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_BSC_RPC_URL);
     
-    // Cargar tokens guardados
-    this.loadSavedTokens();
+    // Cargar tokens guardados de forma asíncrona
+    this.loadSavedTokens().then(tokens => {
+      tokens.forEach(token => {
+        const fakeTransactionHash = `loaded_${token.address.toLowerCase()}`;
+        this.processedTransactions.add(fakeTransactionHash);
+      });
+      
+      // Emitir evento con los tokens actualizados
+      const loadedTokensEvent = new CustomEvent('tokensLoaded', {
+        detail: { tokens }
+      });
+      window.dispatchEvent(loadedTokensEvent);
+    }).catch(error => {
+      console.error(`[${this.formatTime(new Date())}] Error en la carga inicial de tokens:`, error);
+    });
     
     // Escuchar eventos del WebSocket
     window.addEventListener('newPairEvent', ((event: CustomEvent) => {
@@ -89,33 +108,55 @@ export class BSCChainService extends BaseChainService {
     return BSCChainService.instance;
   }
 
-  private loadSavedTokens() {
+  public async loadSavedTokens(): Promise<TokenBase[]> {
     try {
       const savedTokensJson = localStorage.getItem(this.STORAGE_KEY);
-      if (savedTokensJson) {
-        const savedTokens = JSON.parse(savedTokensJson);
-        console.log(`[${this.formatTime(new Date())}] Cargando ${savedTokens.length} tokens guardados`);
-        
-        // Emitir eventos para cada token guardado
-        savedTokens.forEach((token: TokenBase) => {
-          // Añadir el token a processedTransactions usando una transactionHash ficticia
-          const fakeTransactionHash = `loaded_${token.address.toLowerCase()}`;
-          this.processedTransactions.add(fakeTransactionHash);
-          
-          const newTokenEvent = new CustomEvent('newTokenFound', {
-            detail: { token }
-          });
-          window.dispatchEvent(newTokenEvent);
-        });
-      } else {
-        console.log(`[${this.formatTime(new Date())}] No hay tokens guardados`);
+      let savedTokens: TokenBase[] = [];
+      
+      try {
+        savedTokens = savedTokensJson ? JSON.parse(savedTokensJson) : [];
+        if (!Array.isArray(savedTokens)) {
+          console.warn(`[${this.formatTime(new Date())}] Tokens guardados no es un array, reseteando`);
+          savedTokens = [];
+        }
+      } catch (e) {
+        console.warn(`[${this.formatTime(new Date())}] Error parseando tokens guardados, reseteando:`, e);
+        savedTokens = [];
       }
+
+      // Actualizar cada token con su análisis más reciente
+      const updatedTokens = await Promise.all(
+        savedTokens.map(async (token) => {
+          try {
+            console.log(`[${this.formatTime(new Date())}] Actualizando análisis para token:`, token.address);
+            const analysis = await this.analyzeToken(token.address);
+            const score = this.calculateScore(analysis);
+            
+            return {
+              ...token,
+              score,
+              analysis,
+              updatedAt: new Date()
+            };
+          } catch (error) {
+            console.error(`[${this.formatTime(new Date())}] Error actualizando token ${token.address}:`, error);
+            return token; // Mantener el token original si hay error
+          }
+        })
+      );
+
+      // Guardar los tokens actualizados
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(updatedTokens));
+      console.log(`[${this.formatTime(new Date())}] ${updatedTokens.length} tokens actualizados y guardados`);
+
+      return updatedTokens;
     } catch (error) {
       console.error(`[${this.formatTime(new Date())}] Error cargando tokens guardados:`, error);
+      return [];
     }
   }
 
-  private saveToken(tokenData: Required<Pick<TokenBase, 'address' | 'name' | 'symbol' | 'decimals' | 'totalSupply'>>) {
+  private saveToken(tokenData: TokenBase) {
     try {
       const savedTokensJson = localStorage.getItem(this.STORAGE_KEY);
       let savedTokens = [];
@@ -137,66 +178,10 @@ export class BSCChainService extends BaseChainService {
       );
       
       if (!tokenExists) {
-        // Crear un token completo con todos los campos requeridos
-        const token: TokenBase = {
-          ...tokenData,
-          network: this.chainName,
-          createdAt: new Date(),
-          score: {
-            total: 0,
-            security: 0,
-            liquidity: 0,
-            community: 0
-          },
-          analysis: {
-            liquidityUSD: 0,
-            holders: [],
-            buyCount: 0,
-            sellCount: 0,
-            marketCap: 0,
-            price: 0,
-            lockedLiquidity: {
-              percentage: 0,
-              until: new Date(),
-              verified: false
-            },
-            ownership: {
-              renounced: false,
-              isMultisig: false
-            },
-            contract: {
-              verified: false,
-              hasHoneypot: false,
-              hasUnlimitedMint: false,
-              hasTradingPause: false,
-              maxTaxPercentage: 0,
-              hasDangerousFunctions: false
-            },
-            distribution: {
-              maxWalletPercentage: 0,
-              teamWalletPercentage: 0,
-              top10HoldersPercentage: 0
-            },
-            social: {
-              telegram: undefined,
-              twitter: undefined,
-              website: undefined,
-              followers: 0,
-              engagement: 0,
-              sentiment: {
-                positive: 0,
-                neutral: 0,
-                negative: 0
-              }
-            },
-            liquidityLocked: false
-          }
-        };
-        
         // Añadir el nuevo token al principio del array
-        savedTokens.unshift(token);
+        savedTokens.unshift(tokenData);
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(savedTokens));
-        console.log(`[${this.formatTime(new Date())}] Token guardado:`, token.address);
+        console.log(`[${this.formatTime(new Date())}] Token guardado:`, tokenData.address);
       } else {
         console.log(`[${this.formatTime(new Date())}] Token ya existe:`, tokenData.address);
       }
@@ -760,14 +745,27 @@ export class BSCChainService extends BaseChainService {
                 totalSupply: tokenData.totalSupply
               });
               
+              // Analizar el token antes de guardarlo
+              const analysis = await this.analyzeToken(tokenData.address);
+              const score = this.calculateScore(analysis);
+              
+              // Crear el token completo con análisis y score
+              const tokenWithAnalysis: TokenBase = {
+                ...tokenData,
+                network: this.chainName,
+                createdAt: new Date(),
+                score,
+                analysis
+              };
+              
               // Guardar el token
-              this.saveToken(tokenData);
+              this.saveToken(tokenWithAnalysis);
               
               // Emitir evento para actualizar la UI
               const newTokenEvent = new CustomEvent('newTokenFound', {
-                detail: { token: tokenData }
+                detail: { token: tokenWithAnalysis }
               });
-              console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Emitiendo evento newTokenFound:`, tokenData);
+              console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Emitiendo evento newTokenFound:`, tokenWithAnalysis);
               window.dispatchEvent(newTokenEvent);
             } else {
               console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Token inválido:`, {
