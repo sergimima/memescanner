@@ -12,6 +12,7 @@ export function TokenCard({
   const { name, symbol, score, analysis } = token
   const liquidity = analysis?.liquidityUSD || 0
   const holders = analysis?.holders || 0
+  const totalScore = score?.total || 0
 
   return (
     <div className="group relative overflow-hidden rounded-xl bg-white/95 dark:bg-gray-900/80 backdrop-blur-[2px] shadow-md border border-gray-200 dark:border-gray-800 p-6 transition-all duration-300 hover:bg-white hover:shadow-lg dark:hover:bg-gray-900">
@@ -37,7 +38,7 @@ export function TokenCard({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-gray-600 dark:text-gray-400">Score</span>
-            <span className="font-semibold text-gray-900 dark:text-white">{score.total}/100</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{totalScore}/100</span>
           </div>
 
           <div className="flex items-center justify-between">

@@ -9,7 +9,7 @@ export function useTokenAnalysis() {
   const [loading, setLoading] = useState<Record<string, boolean>>({})
   const [errors, setErrors] = useState<Record<string, Error | null | undefined>>({})
 
-  const bscService = new BSCChainService()
+  const bscService = BSCChainService.getInstance()
 
   const analyzeToken = async (address: string) => {
     if (loading[address]) return

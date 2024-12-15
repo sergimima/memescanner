@@ -28,7 +28,7 @@ export function useToken(address: string): TokenData {
       try {
         setData(prev => ({ ...prev, loading: true, error: null }))
         
-        const chainService = new BSCChainService()
+        const chainService = BSCChainService.getInstance()
         const tokenContract = chainService.getTokenContract(address)
         const [name, symbol, decimals, totalSupply] = await Promise.all([
           tokenContract.name(),

@@ -4,10 +4,10 @@ export interface TokenBase {
   symbol: string
   decimals: number
   totalSupply: string
-  network: string
-  createdAt: Date
-  score: TokenScore
-  analysis: TokenAnalysis
+  network?: string
+  createdAt?: Date
+  score?: TokenScore
+  analysis?: TokenAnalysis
 }
 
 export interface TokenScore {

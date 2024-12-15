@@ -4,6 +4,7 @@ import { createPublicClient, http, parseAbi } from 'viem'
 import { bsc } from 'viem/chains'
 import axios from 'axios'
 import { BSC_RPC_URLS, getRandomRPC } from '@/config/rpc'
+import { WebSocketService } from './websocket-service'
 
 // ABI mínimo para verificar tokens
 const ERC20_ABI = parseAbi([
@@ -41,6 +42,9 @@ interface BSCScanEvent {
   data: string;
   blockNumber: string;
   transactionHash: string;
+  token0?: string;
+  token1?: string;
+  pairAddress?: string;
 }
 
 interface TokenEvent {
@@ -50,12 +54,171 @@ interface TokenEvent {
 }
 
 export class BSCChainService extends BaseChainService {
+  private static instance: BSCChainService | null = null;
   readonly chainId = '56'
   readonly chainName = 'bsc'
   readonly scanApiUrl = 'https://api.bscscan.com/api'
   readonly scanApiKey = process.env.NEXT_PUBLIC_BSCSCAN_API_KEY || ''
+  private wsService: WebSocketService;
+  private processedTransactions = new Set<string>();
+  private client: ReturnType<typeof createPublicClient> | null = null;
+  private readonly STORAGE_KEY = 'memetracker_tokens';
 
-  private client: ReturnType<typeof createPublicClient> | null = null
+  private constructor() {
+    super();
+    
+    // Cargar tokens guardados
+    this.loadSavedTokens();
+    
+    // Escuchar eventos del WebSocket
+    window.addEventListener('newPairEvent', ((event: CustomEvent) => {
+      const logData = event.detail.data;
+      // No verificamos transacciones duplicadas aquí, lo haremos en processNewPairs
+      if (logData && logData.token0 && logData.token1) {
+        this.processNewPairs([logData], 'websocket');
+      }
+    }) as EventListener);
+
+    this.wsService = WebSocketService.getInstance();
+  }
+
+  public static getInstance(): BSCChainService {
+    if (!BSCChainService.instance) {
+      BSCChainService.instance = new BSCChainService();
+    }
+    return BSCChainService.instance;
+  }
+
+  private loadSavedTokens() {
+    try {
+      const savedTokensJson = localStorage.getItem(this.STORAGE_KEY);
+      if (savedTokensJson) {
+        const savedTokens = JSON.parse(savedTokensJson);
+        console.log(`[${this.formatTime(new Date())}] Cargando ${savedTokens.length} tokens guardados`);
+        
+        // Emitir eventos para cada token guardado
+        savedTokens.forEach((token: TokenBase) => {
+          // Añadir el token a processedTransactions usando una transactionHash ficticia
+          const fakeTransactionHash = `loaded_${token.address.toLowerCase()}`;
+          this.processedTransactions.add(fakeTransactionHash);
+          
+          const newTokenEvent = new CustomEvent('newTokenFound', {
+            detail: { token }
+          });
+          window.dispatchEvent(newTokenEvent);
+        });
+      } else {
+        console.log(`[${this.formatTime(new Date())}] No hay tokens guardados`);
+      }
+    } catch (error) {
+      console.error(`[${this.formatTime(new Date())}] Error cargando tokens guardados:`, error);
+    }
+  }
+
+  private saveToken(tokenData: Required<Pick<TokenBase, 'address' | 'name' | 'symbol' | 'decimals' | 'totalSupply'>>) {
+    try {
+      const savedTokensJson = localStorage.getItem(this.STORAGE_KEY);
+      let savedTokens = [];
+      
+      try {
+        savedTokens = savedTokensJson ? JSON.parse(savedTokensJson) : [];
+        if (!Array.isArray(savedTokens)) {
+          console.warn(`[${this.formatTime(new Date())}] Tokens guardados no es un array, reseteando`);
+          savedTokens = [];
+        }
+      } catch (e) {
+        console.warn(`[${this.formatTime(new Date())}] Error parseando tokens guardados, reseteando:`, e);
+        savedTokens = [];
+      }
+      
+      // Verificar si el token ya existe
+      const tokenExists = savedTokens.some((t: TokenBase) => 
+        t.address.toLowerCase() === tokenData.address.toLowerCase()
+      );
+      
+      if (!tokenExists) {
+        // Crear un token completo con todos los campos requeridos
+        const token: TokenBase = {
+          ...tokenData,
+          network: this.chainName,
+          createdAt: new Date(),
+          score: {
+            total: 0,
+            security: 0,
+            liquidity: 0,
+            community: 0
+          },
+          analysis: {
+            liquidityUSD: 0,
+            holders: [],
+            buyCount: 0,
+            sellCount: 0,
+            marketCap: 0,
+            price: 0,
+            lockedLiquidity: {
+              percentage: 0,
+              until: new Date(),
+              verified: false
+            },
+            ownership: {
+              renounced: false,
+              isMultisig: false
+            },
+            contract: {
+              verified: false,
+              hasHoneypot: false,
+              hasUnlimitedMint: false,
+              hasTradingPause: false,
+              maxTaxPercentage: 0,
+              hasDangerousFunctions: false
+            },
+            distribution: {
+              maxWalletPercentage: 0,
+              teamWalletPercentage: 0,
+              top10HoldersPercentage: 0
+            },
+            social: {
+              telegram: undefined,
+              twitter: undefined,
+              website: undefined,
+              followers: 0,
+              engagement: 0,
+              sentiment: {
+                positive: 0,
+                neutral: 0,
+                negative: 0
+              }
+            },
+            liquidityLocked: false
+          }
+        };
+        
+        // Añadir el nuevo token al principio del array
+        savedTokens.unshift(token);
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(savedTokens));
+        console.log(`[${this.formatTime(new Date())}] Token guardado:`, token.address);
+      } else {
+        console.log(`[${this.formatTime(new Date())}] Token ya existe:`, tokenData.address);
+      }
+    } catch (error) {
+      console.error(`[${this.formatTime(new Date())}] Error guardando token:`, error);
+    }
+  }
+
+  private isValidToken(token: Partial<TokenBase>): token is Required<Pick<TokenBase, 'address' | 'name' | 'symbol' | 'decimals' | 'totalSupply'>> {
+    return (
+      typeof token.address === 'string' &&
+      typeof token.name === 'string' &&
+      token.name.length > 0 &&
+      typeof token.symbol === 'string' &&
+      token.symbol.length > 0 &&
+      typeof token.decimals === 'number' &&
+      token.decimals >= 0 &&
+      token.decimals <= 18 &&
+      typeof token.totalSupply === 'string' &&
+      token.totalSupply.length > 0
+    )
+  }
 
   private createClient() {
     try {
@@ -140,7 +303,11 @@ export class BSCChainService extends BaseChainService {
   }
 
   async getNewTokens(): Promise<TokenBase[]> {
-    try {
+    // Temporalmente deshabilitado para probar WebSocket
+    console.log('[POLLING] Método deshabilitado temporalmente para pruebas de WebSocket');
+    return [];
+    
+    /* try {
       const events = await this.getLatestTokenEvents()
       console.log(`Encontrados ${events.length} eventos de nuevos tokens`)
 
@@ -199,85 +366,96 @@ export class BSCChainService extends BaseChainService {
     } catch (error) {
       console.error('Error getting new tokens:', error)
       return []
-    }
+    } */
   }
 
   private async getTokenData(address: string): Promise<Partial<TokenBase>> {
     if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-      console.warn(`Dirección inválida: ${address}`)
-      return {}
+      console.warn(`[${this.formatTime(new Date())}] Dirección inválida: ${address}`);
+      return {};
     }
 
     return this.retryWithBackoff(async () => {
       try {
-        const client = this.createClient()
+        console.log(`[${this.formatTime(new Date())}] Obteniendo datos del token: ${address}`);
+        const client = this.createClient();
         const [nameResult, symbolResult, decimalsResult, totalSupplyResult] = await Promise.all([
           client.readContract({
             address: address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'name'
-          }).catch(() => null),
+          }).catch((error) => {
+            console.error(`[${this.formatTime(new Date())}] Error obteniendo name:`, error);
+            return null;
+          }),
           client.readContract({
             address: address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'symbol'
-          }).catch(() => null),
+          }).catch((error) => {
+            console.error(`[${this.formatTime(new Date())}] Error obteniendo symbol:`, error);
+            return null;
+          }),
           client.readContract({
             address: address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'decimals'
-          }).catch(() => null),
+          }).catch((error) => {
+            console.error(`[${this.formatTime(new Date())}] Error obteniendo decimals:`, error);
+            return null;
+          }),
           client.readContract({
             address: address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'totalSupply'
-          }).catch(() => null)
-        ])
+          }).catch((error) => {
+            console.error(`[${this.formatTime(new Date())}] Error obteniendo totalSupply:`, error);
+            return null;
+          })
+        ]);
 
         if (!nameResult || !symbolResult || decimalsResult === null || totalSupplyResult === null) {
-          console.warn(`Token incompleto en ${address}: name=${nameResult}, symbol=${symbolResult}, decimals=${decimalsResult}, totalSupply=${totalSupplyResult}`)
-          return {}
+          console.warn(`[${this.formatTime(new Date())}] Token incompleto en ${address}:`, {
+            name: nameResult,
+            symbol: symbolResult,
+            decimals: decimalsResult,
+            totalSupply: totalSupplyResult
+          });
+          return {};
         }
 
         // Convertir los resultados a los tipos correctos
-        const name = nameResult.toString()
-        const symbol = symbolResult.toString()
-        const decimals = Number(decimalsResult)
-        const totalSupply = totalSupplyResult.toString()
+        const name = nameResult.toString();
+        const symbol = symbolResult.toString();
+        const decimals = Number(decimalsResult);
+        const totalSupply = totalSupplyResult.toString();
 
         // Validaciones adicionales
         if (!name || !symbol || isNaN(decimals) || !totalSupply) {
-          console.warn(`Token con datos inválidos en ${address}`)
-          return {}
+          console.warn(`[${this.formatTime(new Date())}] Token con datos inválidos en ${address}:`, {
+            name,
+            symbol,
+            decimals,
+            totalSupply
+          });
+          return {};
         }
 
-        return {
+        const tokenData = {
           address,
           name,
           symbol,
           decimals,
           totalSupply
-        }
-      } catch (error) {
-        console.error(`Error obteniendo datos del token ${address}:`, error)
-        return {}
-      }
-    }, 5) // Aumentar el número máximo de reintentos a 5
-  }
+        };
 
-  private isValidToken(token: Partial<TokenBase>): token is Required<Pick<TokenBase, 'address' | 'name' | 'symbol' | 'decimals' | 'totalSupply'>> {
-    return (
-      typeof token.address === 'string' &&
-      typeof token.name === 'string' &&
-      token.name.length > 0 &&
-      typeof token.symbol === 'string' &&
-      token.symbol.length > 0 &&
-      typeof token.decimals === 'number' &&
-      token.decimals >= 0 &&
-      token.decimals <= 18 &&
-      typeof token.totalSupply === 'string' &&
-      token.totalSupply.length > 0
-    )
+        console.log(`[${this.formatTime(new Date())}] Token válido encontrado:`, tokenData);
+        return tokenData;
+      } catch (error) {
+        console.error(`[${this.formatTime(new Date())}] Error obteniendo datos del token ${address}:`, error);
+        return {};
+      }
+    }, 5);
   }
 
   calculateScore(analysis: TokenAnalysis): TokenScore {
@@ -487,6 +665,125 @@ export class BSCChainService extends BaseChainService {
         abi: ERC20_ABI,
         functionName: 'totalSupply'
       })
+    }
+  }
+
+  private formatTime(date: Date): string {
+    return date.toLocaleTimeString('es-ES', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit',
+      hour12: false 
+    });
+  }
+
+  private async processNewPairs(logs: BSCScanEvent[], source: 'websocket' | 'polling' = 'polling') {
+    try {
+      const now = new Date();
+      console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Procesando ${logs.length} eventos de nuevos pares`);
+      
+      // Extraer las direcciones de los tokens
+      const addresses = logs.flatMap(event => {
+        // Si ya procesamos esta transacción, ignorarla
+        if (this.processedTransactions.has(event.transactionHash)) {
+          console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Transacción ya procesada:`, event.transactionHash);
+          return [];
+        }
+
+        // Usar token0 y token1 si están disponibles (desde WebSocket)
+        if ('token0' in event && 'token1' in event && event.token0 && event.token1) {
+          console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Par encontrado (WebSocket):`, {
+            token0: event.token0,
+            token1: event.token1,
+            pairAddress: event.pairAddress,
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          });
+          
+          // Marcar como procesado DESPUÉS de obtener las direcciones
+          this.processedTransactions.add(event.transactionHash);
+          return [event.token0, event.token1];
+        }
+        
+        // Fallback para eventos de polling
+        if (!event.topics || event.topics.length < 3) {
+          console.warn(`[${this.formatTime(now)}][${source.toUpperCase()}] Evento inválido, faltan topics:`, event);
+          return [];
+        }
+
+        const token0 = '0x' + event.topics[1].slice(26);
+        const token1 = '0x' + event.topics[2].slice(26);
+        
+        console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Par encontrado (Polling):`, {
+          token0,
+          token1,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash
+        });
+
+        // Marcar como procesado DESPUÉS de obtener las direcciones
+        this.processedTransactions.add(event.transactionHash);
+        return [token0, token1];
+      }).filter(address => {
+        const isWBNB = address.toLowerCase() === ADDRESSES.WBNB.toLowerCase();
+        const isPancakeFactory = address.toLowerCase() === ADDRESSES.PANCAKE_FACTORY.toLowerCase();
+        if (isWBNB || isPancakeFactory) {
+          console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Ignorando dirección conocida:`, {
+            address,
+            isWBNB,
+            isPancakeFactory
+          });
+          return false;
+        }
+        return true;
+      });
+
+      const uniqueAddresses = [...new Set(addresses)];
+      console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Direcciones después de filtrar:`, uniqueAddresses);
+      
+      if (uniqueAddresses.length > 0) {
+        console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Procesando ${uniqueAddresses.length} direcciones únicas:`, uniqueAddresses);
+        
+        // Procesar cada token único
+        for (const address of uniqueAddresses) {
+          try {
+            console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Obteniendo datos del token:`, address);
+            const tokenData = await this.getTokenData(address);
+            console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Datos obtenidos para ${address}:`, tokenData);
+            
+            if (this.isValidToken(tokenData)) {
+              console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Token válido encontrado:`, {
+                address: tokenData.address,
+                name: tokenData.name,
+                symbol: tokenData.symbol,
+                decimals: tokenData.decimals,
+                totalSupply: tokenData.totalSupply
+              });
+              
+              // Guardar el token
+              this.saveToken(tokenData);
+              
+              // Emitir evento para actualizar la UI
+              const newTokenEvent = new CustomEvent('newTokenFound', {
+                detail: { token: tokenData }
+              });
+              console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Emitiendo evento newTokenFound:`, tokenData);
+              window.dispatchEvent(newTokenEvent);
+            } else {
+              console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Token inválido:`, {
+                address,
+                tokenData
+              });
+            }
+          } catch (error) {
+            console.error(`[${this.formatTime(now)}][${source.toUpperCase()}] Error procesando token ${address}:`, error);
+          }
+        }
+      } else {
+        console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] No hay direcciones únicas para procesar`);
+      }
+    } catch (error) {
+      console.error(`[${this.formatTime(new Date())}][${source.toUpperCase()}] Error procesando eventos:`, error)
     }
   }
 }

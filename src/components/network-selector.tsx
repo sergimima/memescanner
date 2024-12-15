@@ -17,6 +17,7 @@ import {
   BaseIcon, 
   ArbitrumIcon 
 } from '@/components/icons/blockchain'
+import { WebSocketService } from '@/features/tokens/services/websocket-service'
 
 const networkIcons: Record<NetworkId, React.ComponentType<any>> = {
   ethereum: EthereumIcon,
@@ -34,6 +35,14 @@ interface NetworkSelectorProps {
 export function NetworkSelector({ value, onValueChange }: NetworkSelectorProps) {
   const [open, setOpen] = React.useState(false)
   const selectedNetwork = networks.find((network) => network.id === value)
+  const wsService = React.useMemo(() => WebSocketService.getInstance(), [])
+
+  // Conectar WebSocket cuando cambia la red
+  React.useEffect(() => {
+    if (value && ['bsc', 'ethereum', 'base', 'arbitrum'].includes(value)) {
+      wsService.connectToChain(value);
+    }
+  }, [value, wsService]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
