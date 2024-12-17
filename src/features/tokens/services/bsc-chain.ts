@@ -726,23 +726,36 @@ export class BSCChainService extends BaseChainService {
     }
   }
 
-  private async loadAndUpdateTokens() {
+  /**
+   * Carga y actualiza los tokens guardados
+   */
+  public async loadAndUpdateTokens() {
     try {
-      const savedTokens = await this.loadSavedTokens();
-      console.log(`[${this.formatTime(new Date())}] ${savedTokens.length} tokens cargados del almacenamiento local`);
+      // Cargar tokens guardados
+      this.tokens = await this.loadSavedTokens();
+
+      // Obtener nuevos tokens
+      const newTokens = await this.getNewTokens();
       
-      // Asegurarnos de que los tokens se cargan en el estado
-      this.tokens = savedTokens;
-      
-      // Encolar para análisis solo los tokens que no tienen análisis reciente
-      const tokensToAnalyze = savedTokens.filter(token => this.needsUpdate(token));
-      console.log(`[${this.formatTime(new Date())}] ${tokensToAnalyze.length} tokens requieren actualización`);
-      
-      tokensToAnalyze.forEach(token => {
-        this.queueTokenAnalysis(token.address);
-      });
+      // Procesar nuevos tokens
+      for (const token of newTokens) {
+        if (!this.tokens.find(t => t.address === token.address)) {
+          this.tokens.push(token);
+          await this.saveToken(token);
+        }
+      }
+
+      // Actualizar tokens existentes que lo necesiten
+      for (const token of this.tokens) {
+        if (this.needsUpdate(token)) {
+          this.queueTokenAnalysis(token.address);
+        }
+      }
+
+      return this.tokens;
     } catch (error) {
-      console.error(`[${this.formatTime(new Date())}] Error cargando tokens:`, error);
+      console.error('Error en loadAndUpdateTokens:', error);
+      throw error;
     }
   }
 
