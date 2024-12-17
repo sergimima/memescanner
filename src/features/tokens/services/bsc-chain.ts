@@ -71,6 +71,11 @@ export class BSCChainService extends BaseChainService {
   private client: ReturnType<typeof createPublicClient> | null = null;
   private readonly STORAGE_KEY = 'bsc_tokens';
   private provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_BSC_RPC_URL);
+  private analysisQueue: string[] = [];
+  private isProcessingQueue = false;
+  private readonly CONCURRENT_REQUESTS = 3;
+  private readonly DELAY_BETWEEN_REQUESTS = 1000; // 1 segundo
+  private tokens: TokenBase[] = [];
 
   private constructor() {
     super();
@@ -168,21 +173,13 @@ export class BSCChainService extends BaseChainService {
   }
 
   private createClient() {
-    try {
-      if (!this.client) {
-        this.client = createPublicClient({
-          chain: bsc,
-          transport: http(getRandomRPC(BSC_RPC_URLS)),
-          batch: {
-            multicall: true
-          }
-        })
-      }
-      return this.client
-    } catch (error) {
-      console.error('Error creando el cliente RPC:', error)
-      throw new Error('No se pudo crear el cliente RPC')
+    if (!this.client) {
+      this.client = createPublicClient({
+        chain: bsc,
+        transport: http('/api/bscscan/rpc')  // Usar el proxy en la misma estructura que holders
+      })
     }
+    return this.client
   }
 
   private async delay(ms: number) {
@@ -321,183 +318,188 @@ export class BSCChainService extends BaseChainService {
   }
 
   private async getTokenData(address: string): Promise<Partial<TokenBase>> {
-    if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-      console.warn(`[${this.formatTime(new Date())}] Dirección inválida: ${address}`);
-      return {};
-    }
-
-    return this.retryWithBackoff(async () => {
-      try {
-        console.log(`[${this.formatTime(new Date())}] Obteniendo datos del token: ${address}`);
-        const client = this.createClient();
-        const [nameResult, symbolResult, decimalsResult, totalSupplyResult] = await Promise.all([
-          client.readContract({
-            address: address as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'name'
-          }).catch((error) => {
-            console.error(`[${this.formatTime(new Date())}] Error obteniendo name:`, error);
-            return null;
-          }),
-          client.readContract({
-            address: address as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'symbol'
-          }).catch((error) => {
-            console.error(`[${this.formatTime(new Date())}] Error obteniendo symbol:`, error);
-            return null;
-          }),
-          client.readContract({
-            address: address as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'decimals'
-          }).catch((error) => {
-            console.error(`[${this.formatTime(new Date())}] Error obteniendo decimals:`, error);
-            return null;
-          }),
-          client.readContract({
-            address: address as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'totalSupply'
-          }).catch((error) => {
-            console.error(`[${this.formatTime(new Date())}] Error obteniendo totalSupply:`, error);
-            return null;
-          })
-        ]);
-
-        if (!nameResult || !symbolResult || decimalsResult === null || totalSupplyResult === null) {
-          console.warn(`[${this.formatTime(new Date())}] Token incompleto en ${address}:`, {
-            name: nameResult,
-            symbol: symbolResult,
-            decimals: decimalsResult,
-            totalSupply: totalSupplyResult
-          });
-          return {};
-        }
-
-        // Convertir los resultados a los tipos correctos
-        const name = nameResult.toString();
-        const symbol = symbolResult.toString();
-        const decimals = Number(decimalsResult);
-        const totalSupply = totalSupplyResult.toString();
-
-        // Validaciones adicionales
-        if (!name || !symbol || isNaN(decimals) || !totalSupply) {
-          console.warn(`[${this.formatTime(new Date())}] Token con datos inválidos en ${address}:`, {
-            name,
-            symbol,
-            decimals,
-            totalSupply
-          });
-          return {};
-        }
-
-        const tokenData = {
-          address,
-          name,
-          symbol,
-          decimals,
-          totalSupply
-        };
-
-        console.log(`[${this.formatTime(new Date())}] Token válido encontrado:`, tokenData);
-        return tokenData;
-      } catch (error) {
-        console.error(`[${this.formatTime(new Date())}] Error obteniendo datos del token ${address}:`, error);
-        return {};
+    const cacheKey = `token_data_${address.toLowerCase()}`;
+    const cachedData = localStorage.getItem(cacheKey);
+    
+    if (cachedData) {
+      const parsed = JSON.parse(cachedData);
+      const cacheAge = Date.now() - parsed.timestamp;
+      // Caché válido por 5 minutos
+      if (cacheAge < 5 * 60 * 1000) {
+        return parsed.data;
       }
-    }, 5);
-  }
-
-  calculateScore(analysis: TokenAnalysis): TokenScore {
-    const score = this.calculateBaseScore(analysis)
-    return {
-      ...score,
-      // Aquí podemos agregar lógica específica de BSC para ajustar el score
-      total: score.total
-    }
-  }
-
-  public async analyzeToken(address: string): Promise<TokenAnalysis> {
-    // Análisis básico
-    const analysis: TokenAnalysis = {
-      liquidityUSD: 0,
-      holders: [], // Inicializar como array vacío
-      buyCount: 0,
-      sellCount: 0,
-      marketCap: 0,
-      price: 0,
-      lockedLiquidity: {
-        percentage: 0,
-        until: new Date(),
-        verified: false
-      },
-      ownership: {
-        renounced: false,
-        isMultisig: false
-      },
-      contract: {
-        verified: false,
-        hasHoneypot: false,
-        hasUnlimitedMint: false,
-        hasTradingPause: false,
-        maxTaxPercentage: 0,
-        hasDangerousFunctions: false
-      },
-      distribution: {
-        maxWalletPercentage: 0,
-        teamWalletPercentage: 0,
-        top10HoldersPercentage: 0
-      },
-      social: {
-        telegram: undefined,
-        twitter: undefined,
-        website: undefined,
-        followers: 0,
-        engagement: 0,
-        sentiment: {
-          positive: 0,
-          neutral: 0,
-          negative: 0
-        }
-      },
-      liquidityLocked: false,
-      liquidityLockDuration: undefined,
-      liquidityLockPlatform: undefined
     }
 
     try {
-      // Obtener holders
-      const holdersResponse = await this.getHolders(address)
-      analysis.holders = holdersResponse.map(holder => ({
-        address: holder.address,
-        balance: holder.balance,
-        percentage: holder.percentage
-      }))
+      const contract = this.getTokenContract(address);
+      const [name, symbol, decimals, totalSupply] = await Promise.all([
+        contract.name(),
+        contract.symbol(),
+        contract.decimals(),
+        contract.totalSupply()
+      ]);
 
-      // Resto del análisis...
-      return analysis
+      const tokenData = {
+        address,
+        name,
+        symbol,
+        decimals: Number(decimals),
+        totalSupply: totalSupply.toString(),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      // Guardar en caché
+      localStorage.setItem(cacheKey, JSON.stringify({
+        data: tokenData,
+        timestamp: Date.now()
+      }));
+
+      return tokenData;
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        console.error('Error cargando datos de la API:', error.response ? error.response.data : error.message);
-      } else {
-        console.error('Error desconocido:', error);
+      console.error(`[${this.formatTime(new Date())}] Error obteniendo datos del token ${address}:`, error);
+      throw error;
+    }
+  }
+
+  public calculateScore(analysis: TokenAnalysis): TokenScore {
+    // Calcular puntuación base
+    let score = {
+      security: 0,
+      liquidity: 0,
+      community: 0,
+      total: 0
+    };
+
+    // Puntuación de seguridad (40% del total)
+    if (analysis.contract?.verified) score.security += 15;
+    if (!analysis.contract?.hasHoneypot) score.security += 10;
+    if (!analysis.contract?.hasUnlimitedMint) score.security += 5;
+    if (!analysis.contract?.hasTradingPause) score.security += 5;
+    if ((analysis.contract?.maxTaxPercentage || 0) <= 5) score.security += 5;
+    
+    // Puntuación de liquidez (30% del total)
+    const liquidityScore = Math.min(analysis.liquidityUSD / 10000, 15); // Max 15 puntos por liquidez
+    score.liquidity += liquidityScore;
+    
+    if (analysis.liquidityLocked) {
+      score.liquidity += 10;
+      const lockDuration = analysis.liquidityLockDuration ? 
+        Number(analysis.liquidityLockDuration) : 0;
+      if (lockDuration > 180) {
+        score.liquidity += 5;
       }
-      return analysis
+    }
+
+    // Puntuación de comunidad (30% del total)
+    if (analysis.social?.telegram) score.community += 5;
+    if (analysis.social?.twitter) score.community += 5;
+    if (analysis.social?.website) score.community += 5;
+    if ((analysis.social?.followers || 0) > 1000) score.community += 5;
+    if ((analysis.social?.engagement || 0) > 0.1) score.community += 5;
+
+    // Calcular puntuación total (ponderada)
+    score.total = (
+      (score.security * 0.4) + 
+      (score.liquidity * 0.3) + 
+      (score.community * 0.3)
+    );
+
+    return score;
+  }
+
+  public async analyzeToken(address: string): Promise<TokenAnalysis> {
+    address = address.toLowerCase();
+    const cacheKey = `analysis_${address}`;
+    
+    try {
+      // Verificar caché primero
+      const cachedAnalysis = localStorage.getItem(cacheKey);
+      if (cachedAnalysis) {
+        const parsed = JSON.parse(cachedAnalysis);
+        const cacheAge = Date.now() - parsed.timestamp;
+        
+        if (cacheAge < 5 * 60 * 1000) {
+          console.log(`[${this.formatTime(new Date())}] Usando análisis en caché válido para: ${address}`);
+          return parsed.data;
+        }
+      }
+
+      console.log(`[${this.formatTime(new Date())}] Realizando análisis completo para: ${address}`);
+      
+      // Realizar análisis completo
+      const [holders, liquidityData, contractData, distributionData, socialData] = await Promise.all([
+        this.getHolders(address),
+        this.getLiquidityData(address),
+        this.getContractData(address),
+        this.getDistributionData(address),
+        this.getSocialData(address)
+      ]);
+
+      const analysis: TokenAnalysis = {
+        holders,
+        liquidityUSD: liquidityData.liquidityUSD,
+        buyCount: 0,
+        sellCount: 0,
+        marketCap: 0,
+        price: 0,
+        lockedLiquidity: {
+          percentage: 0,
+          until: new Date(),
+          verified: false
+        },
+        ownership: {
+          renounced: false,
+          isMultisig: false
+        },
+        contract: {
+          verified: contractData.contract.verified,
+          hasHoneypot: contractData.contract.hasHoneypot,
+          hasUnlimitedMint: contractData.contract.hasUnlimitedMint,
+          hasTradingPause: contractData.contract.hasTradingPause,
+          maxTaxPercentage: contractData.contract.maxTaxPercentage,
+          hasDangerousFunctions: contractData.contract.hasDangerousFunctions
+        },
+        distribution: {
+          maxWalletPercentage: distributionData.distribution.maxWalletPercentage,
+          teamWalletPercentage: distributionData.distribution.teamWalletPercentage,
+          top10HoldersPercentage: distributionData.distribution.top10HoldersPercentage
+        },
+        social: {
+          telegram: socialData?.telegram,
+          twitter: socialData?.twitter,
+          website: socialData?.website,
+          followers: socialData?.followers || 0,
+          engagement: socialData?.engagement || 0
+        },
+        liquidityLocked: false,
+        liquidityLockDuration: undefined,
+        liquidityLockPlatform: undefined
+      };
+
+      // Guardar en caché con timestamp
+      localStorage.setItem(cacheKey, JSON.stringify({
+        data: analysis,
+        timestamp: Date.now()
+      }));
+
+      // Calcular y actualizar score
+      const score = this.calculateScore(analysis);
+      this.updateTokenAnalysis(address, analysis, score);
+
+      return analysis;
+    } catch (error) {
+      console.error(`[${this.formatTime(new Date())}] Error analizando token ${address}:`, error);
+      throw error;
     }
   }
 
   private async getHolders(address: string) {
     return this.retryWithBackoff(async () => {
       try {
-        const response = await axios.get(`${this.scanApiUrl}`, {
+        const response = await axios.get(`/api/bscscan/holders`, {
           params: {
-            module: 'token',
-            action: 'tokenholderlist',
-            contractaddress: address,
-            apikey: this.scanApiKey,
-            page: 1,
-            offset: 100
+            address
           }
         });
 
@@ -536,7 +538,8 @@ export class BSCChainService extends BaseChainService {
         if (!pairAddress || pairAddress === ADDRESSES.ZERO_ADDRESS) {
           return {
             hasLiquidity: false,
-            liquidityBNB: '0'
+            liquidityBNB: '0',
+            liquidityUSD: 0
           }
         }
 
@@ -549,22 +552,26 @@ export class BSCChainService extends BaseChainService {
         if (!reserves || !reserves[0] || !reserves[1]) {
           return {
             hasLiquidity: false,
-            liquidityBNB: '0'
+            liquidityBNB: '0',
+            liquidityUSD: 0
           }
         }
 
+        const liquidityBNB = reserves[1].toString()
         return {
           hasLiquidity: true,
-          liquidityBNB: reserves[1].toString()
+          liquidityBNB,
+          liquidityUSD: Number(liquidityBNB)
         }
       } catch (error) {
-        console.error(`Error obteniendo datos de liquidez para ${address}:`, error);
+        console.error(`[${this.formatTime(new Date())}] Error obteniendo datos de liquidez:`, error)
         return {
           hasLiquidity: false,
-          liquidityBNB: '0'
+          liquidityBNB: '0',
+          liquidityUSD: 0
         }
       }
-    }, 5)
+    })
   }
 
   private async getContractData(address: string) {
@@ -636,13 +643,115 @@ export class BSCChainService extends BaseChainService {
     }
   }
 
-  private formatTime(date: Date): string {
-    return date.toLocaleTimeString('es-ES', { 
-      hour: '2-digit', 
-      minute: '2-digit', 
-      second: '2-digit',
-      hour12: false 
-    });
+  private async processAnalysisQueue() {
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
+
+    try {
+      while (this.analysisQueue.length > 0) {
+        const batch = this.analysisQueue.splice(0, this.CONCURRENT_REQUESTS);
+        const promises = batch.map(async (address) => {
+          try {
+            const analysis = await this.analyzeToken(address);
+            const score = this.calculateScore(analysis);
+            await this.updateTokenAnalysis(address, analysis, score);
+          } catch (error) {
+            console.error(`[${this.formatTime(new Date())}] Error analizando token ${address}:`, error);
+          }
+          await this.delay(this.DELAY_BETWEEN_REQUESTS);
+        });
+
+        await Promise.all(promises);
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  public async queueTokenAnalysis(address: string) {
+    // Normalizar la dirección
+    address = address.toLowerCase();
+    
+    // Verificar si el token ya está en la cola o está siendo procesado
+    if (this.analysisQueue.includes(address)) {
+      console.log(`[${this.formatTime(new Date())}] Token ${address} ya está en la cola de análisis`);
+      return;
+    }
+
+    // Verificar si el token tiene un análisis reciente en caché
+    const cacheKey = `analysis_${address}`;
+    const cachedAnalysis = localStorage.getItem(cacheKey);
+    if (cachedAnalysis) {
+      try {
+        const parsed = JSON.parse(cachedAnalysis);
+        const cacheAge = Date.now() - parsed.timestamp;
+        if (cacheAge < 5 * 60 * 1000) { // Caché válido por 5 minutos
+          console.log(`[${this.formatTime(new Date())}] Usando análisis en caché para: ${address}`);
+          return;
+        }
+      } catch {
+        // Si hay error al parsear el caché, continuamos con el análisis
+      }
+    }
+
+    console.log(`[${this.formatTime(new Date())}] Añadiendo token ${address} a la cola de análisis`);
+    this.analysisQueue.push(address);
+    
+    // Iniciar el procesamiento si no está en curso
+    if (!this.isProcessingQueue) {
+      this.processAnalysisQueue();
+    }
+  }
+
+  private async updateTokenAnalysis(address: string, analysis: TokenAnalysis, score: TokenScore) {
+    try {
+      const tokenData = await this.getTokenData(address);
+      const updatedToken: TokenBase = {
+        ...tokenData,
+        analysis,
+        score,
+        updatedAt: new Date()
+      } as TokenBase;
+      this.saveToken(updatedToken);
+    } catch (error) {
+      console.error(`[${this.formatTime(new Date())}] Error actualizando análisis del token ${address}:`, error);
+    }
+  }
+
+  private async loadAndUpdateTokens() {
+    try {
+      const savedTokens = await this.loadSavedTokens();
+      console.log(`[${this.formatTime(new Date())}] ${savedTokens.length} tokens cargados del almacenamiento local`);
+      
+      // Asegurarnos de que los tokens se cargan en el estado
+      this.tokens = savedTokens;
+      
+      // Encolar para análisis solo los tokens que no tienen análisis reciente
+      const tokensToAnalyze = savedTokens.filter(token => this.needsUpdate(token));
+      console.log(`[${this.formatTime(new Date())}] ${tokensToAnalyze.length} tokens requieren actualización`);
+      
+      tokensToAnalyze.forEach(token => {
+        this.queueTokenAnalysis(token.address);
+      });
+    } catch (error) {
+      console.error(`[${this.formatTime(new Date())}] Error cargando tokens:`, error);
+    }
+  }
+
+  private needsUpdate(token: TokenBase): boolean {
+    const cacheKey = `analysis_${token.address.toLowerCase()}`;
+    const cachedAnalysis = localStorage.getItem(cacheKey);
+    
+    if (!cachedAnalysis) return true;
+    
+    try {
+      const parsed = JSON.parse(cachedAnalysis);
+      const cacheAge = Date.now() - parsed.timestamp;
+      // Actualizar si el caché tiene más de 5 minutos
+      return cacheAge > 5 * 60 * 1000;
+    } catch {
+      return true;
+    }
   }
 
   private async processNewPairs(logs: BSCScanEvent[], source: 'websocket' | 'polling' = 'polling') {
@@ -729,27 +838,7 @@ export class BSCChainService extends BaseChainService {
               });
               
               // Analizar el token antes de guardarlo
-              const analysis = await this.analyzeToken(tokenData.address);
-              const score = this.calculateScore(analysis);
-              
-              // Crear el token completo con análisis y score
-              const tokenWithAnalysis: TokenBase = {
-                ...tokenData,
-                network: this.chainName,
-                createdAt: new Date(),
-                score,
-                analysis
-              };
-              
-              // Guardar el token
-              this.saveToken(tokenWithAnalysis);
-              
-              // Emitir evento para actualizar la UI
-              const newTokenEvent = new CustomEvent('newTokenFound', {
-                detail: { token: tokenWithAnalysis }
-              });
-              console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Emitiendo evento newTokenFound:`, tokenWithAnalysis);
-              window.dispatchEvent(newTokenEvent);
+              this.queueTokenAnalysis(tokenData.address);
             } else {
               console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Token inválido:`, {
                 address,
@@ -768,35 +857,12 @@ export class BSCChainService extends BaseChainService {
     }
   }
 
-  public async loadAndUpdateTokens(): Promise<void> {
-    try {
-      const savedTokens = await this.loadSavedTokens();
-
-      // Emitir evento con los tokens cargados
-      const loadedTokensEvent = new CustomEvent('tokensLoaded', {
-        detail: { tokens: savedTokens }
-      });
-      window.dispatchEvent(loadedTokensEvent);
-
-      console.log(`[${this.formatTime(new Date())}] ${savedTokens.length} tokens cargados del almacenamiento local`);
-      
-      // Intentar actualizar el análisis de cada token
-      savedTokens.forEach(async (token) => {
-        try {
-          const analysis = await this.analyzeToken(token.address);
-          const updatedToken: TokenBase = {
-            ...token,
-            analysis,
-            updatedAt: new Date()
-          } as TokenBase;
-          this.saveToken(updatedToken);
-        } catch (error) {
-          console.error(`[${this.formatTime(new Date())}] Error actualizando análisis del token ${token.address}:`, error);
-        }
-      });
-    } catch (error) {
-      console.error(`[${this.formatTime(new Date())}] Error cargando tokens guardados:`, error);
-      throw error;
-    }
+  private formatTime(date: Date): string {
+    return date.toLocaleTimeString('es-ES', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit',
+      hour12: false 
+    });
   }
 }

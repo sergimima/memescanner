@@ -9,7 +9,7 @@ export function useTokenDetection() {
   const [tokens, setTokens] = useState<TokenBase[]>(() => {
     // Cargar tokens guardados al inicializar el estado
     try {
-      const savedTokensJson = localStorage.getItem('memetracker_tokens');
+      const savedTokensJson = localStorage.getItem('bsc_tokens');  // Usar la misma clave que BSCChainService
       if (savedTokensJson) {
         const savedTokens = JSON.parse(savedTokensJson);
         console.log(`[${new Date().toLocaleTimeString()}] Cargando ${savedTokens.length} tokens guardados en el estado inicial`);
@@ -67,26 +67,75 @@ export function useTokenDetection() {
     }
   }
 
-  // Escuchar eventos de nuevos tokens
   useEffect(() => {
-    const handleNewToken = (event: CustomEvent<{ token: TokenBase }>) => {
-      console.log('[useTokenDetection] Nuevo token detectado:', event.detail.token);
-      setTokens(prevTokens => [event.detail.token, ...prevTokens]);
+    const handleNewToken = async (event: Event) => {
+      const customEvent = event as CustomEvent<{ token: TokenBase }>;
+      console.log(`[${new Date().toLocaleTimeString()}] Nuevo token detectado:`, customEvent.detail.token);
+      
+      // Añadir el token a la lista
+      setTokens(prevTokens => {
+        // Verificar si el token ya existe
+        if (prevTokens.some(t => t.address.toLowerCase() === customEvent.detail.token.address.toLowerCase())) {
+          return prevTokens;
+        }
+        // Añadir el nuevo token al principio del array
+        const newTokens = [customEvent.detail.token, ...prevTokens];
+        // Guardar en localStorage
+        try {
+          localStorage.setItem('bsc_tokens', JSON.stringify(newTokens));  // Usar la misma clave que BSCChainService
+        } catch (error) {
+          console.error(`[${new Date().toLocaleTimeString()}] Error guardando tokens:`, error);
+        }
+        return newTokens;
+      });
+      
+      // Iniciar análisis automático
+      if (chainService) {
+        try {
+          setLoading(true);
+          console.log(`[${new Date().toLocaleTimeString()}] Iniciando análisis automático para:`, customEvent.detail.token.address);
+          chainService.queueTokenAnalysis(customEvent.detail.token.address);
+        } catch (error) {
+          console.error(`[${new Date().toLocaleTimeString()}] Error en análisis automático:`, error);
+          setError(error as Error);
+        } finally {
+          setLoading(false);
+        }
+      }
     };
 
-    const handleTokensLoaded = (event: CustomEvent<{ tokens: TokenBase[] }>) => {
-      setTokens(event.detail.tokens);
-    };
-
-    // Escuchar eventos
-    window.addEventListener('newTokenFound', handleNewToken as EventListener);
-    window.addEventListener('tokensLoaded', handleTokensLoaded as EventListener);
+    if (chainService) {
+      window.addEventListener('newTokenFound', handleNewToken);
+      console.log(`[${new Date().toLocaleTimeString()}] Listener de nuevos tokens activado`);
+    }
 
     return () => {
-      window.removeEventListener('newTokenFound', handleNewToken as EventListener);
-      window.removeEventListener('tokensLoaded', handleTokensLoaded as EventListener);
+      if (chainService) {
+        window.removeEventListener('newTokenFound', handleNewToken);
+        console.log(`[${new Date().toLocaleTimeString()}] Listener de nuevos tokens desactivado`);
+      }
     };
-  }, []);
+  }, [chainService]);
+
+  // Analizar tokens existentes
+  useEffect(() => {
+    const analyzeExistingTokens = async () => {
+      if (!chainService || tokens.length === 0) return;
+
+      console.log(`[${new Date().toLocaleTimeString()}] Iniciando análisis de ${tokens.length} tokens existentes`);
+      setLoading(true);
+
+      try {
+        for (const token of tokens) {
+          chainService.queueTokenAnalysis(token.address);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    analyzeExistingTokens();
+  }, [chainService, network]); // Se ejecuta cuando cambia la red o el servicio
 
   // Detectar tokens iniciales y configurar polling
   useEffect(() => {

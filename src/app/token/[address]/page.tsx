@@ -124,18 +124,6 @@ export default function TokenPage() {
     ]
   };
 
-  const tokenInfo = {
-    token: {
-      name: token.name,
-      symbol: token.symbol,
-      contract: token.address,
-      chain: token.network || 'BSC', // Valor por defecto si network es undefined
-      totalSupply: Number(token.totalSupply).toLocaleString(),
-      marketCap: analysis.marketCap,
-      price: analysis.price
-    }
-  };
-
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-100 via-white to-purple-100 dark:from-purple-950 dark:via-gray-900 dark:to-blue-950">
       <div className="container mx-auto px-4 py-8">
@@ -149,7 +137,16 @@ export default function TokenPage() {
               <TabsTrigger value="security">Seguridad</TabsTrigger>
             </TabsList>
             <TabsContent value="info">
-              <TokenInfoTab {...tokenInfo} />
+              <TokenInfoTab token={{
+                name: token.name,
+                symbol: token.symbol,
+                contract: token.address,
+                chain: token.chain || 'BSC',
+                totalSupply: token.totalSupply,
+                decimals: token.decimals,
+                marketCap: analysis.marketCap,
+                price: analysis.price
+              }} />
             </TabsContent>
             <TabsContent value="holders">
               <HoldersTab {...holdersData} />

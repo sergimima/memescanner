@@ -1,4 +1,5 @@
 import { TokenBase } from "@/features/tokens/types/token"
+import { formatUSD } from "@/utils/format"
 
 interface TokenCardProps {
   token: TokenBase;
@@ -11,7 +12,7 @@ export function TokenCard({
 }: TokenCardProps) {
   const { name, symbol, score, analysis } = token
   const liquidity = analysis?.liquidityUSD || 0
-  const holders = analysis?.holders || 0
+  const holders = analysis?.holders?.length || 0
   const totalScore = score?.total || 0
 
   return (
@@ -38,12 +39,12 @@ export function TokenCard({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-gray-600 dark:text-gray-400">Score</span>
-            <span className="font-semibold text-gray-900 dark:text-white">{totalScore}/100</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{totalScore.toFixed(2)}/100</span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-gray-600 dark:text-gray-400">Liquidez</span>
-            <span className="font-semibold text-gray-900 dark:text-white">${liquidity.toLocaleString()}</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{formatUSD(liquidity)}</span>
           </div>
 
           <div className="flex items-center justify-between">

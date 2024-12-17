@@ -1,3 +1,5 @@
+import { formatNumber, formatUSD } from "@/utils/format"
+
 interface TokenInfoTabProps {
   token: {
     name: string;
@@ -5,6 +7,7 @@ interface TokenInfoTabProps {
     contract: string;
     chain: string;
     totalSupply: string;
+    decimals: number;
     marketCap: number;
     price: number;
   }
@@ -32,15 +35,15 @@ export function TokenInfoTab({ token }: TokenInfoTabProps) {
         </div>
         <div>
           <p className="text-sm text-muted-foreground">Supply Total</p>
-          <p className="text-lg font-medium">{token.totalSupply}</p>
+          <p className="text-lg font-medium">{formatNumber(token.totalSupply, token.decimals)}</p>
         </div>
         <div>
           <p className="text-sm text-muted-foreground">Market Cap</p>
-          <p className="text-lg font-medium">${token.marketCap.toLocaleString()}</p>
+          <p className="text-lg font-medium">{formatUSD(token.marketCap)}</p>
         </div>
         <div>
           <p className="text-sm text-muted-foreground">Precio</p>
-          <p className="text-lg font-medium">${token.price.toLocaleString()}</p>
+          <p className="text-lg font-medium">{formatUSD(token.price)}</p>
         </div>
       </div>
     </div>
