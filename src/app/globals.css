@@ -59,6 +59,24 @@
   }
 }
 
+@layer components {
+  .bg-muted {
+    background-color: hsl(var(--muted));
+  }
+  
+  .text-muted-foreground {
+    color: hsl(var(--muted-foreground));
+  }
+  
+  .bg-background {
+    background-color: hsl(var(--background));
+  }
+  
+  .text-foreground {
+    color: hsl(var(--foreground));
+  }
+}
+
 .glassmorphism {
   @apply bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm;
   @apply border border-gray-100 dark:border-gray-800;

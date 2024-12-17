@@ -102,7 +102,7 @@ export default function TokenPage() {
     securityScore: score.security,
     liquidityLocked: {
       amount: `$${analysis.liquidityUSD.toLocaleString()}`,
-      duration: analysis.lockedLiquidity.until.toISOString(), // Convertir Date a string
+      duration: analysis.lockedLiquidity.until ? new Date(analysis.lockedLiquidity.until).toISOString() : 'N/A',
       platform: analysis.lockedLiquidity.verified ? 'Verificado' : 'N/A'
     },
     checks: [
@@ -137,30 +137,32 @@ export default function TokenPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <h1 className="text-3xl font-bold mb-6">{token.name}</h1>
-        <Tabs defaultValue="info">
-          <TabsList>
-            <TabsTrigger value="info">Información</TabsTrigger>
-            <TabsTrigger value="holders">Holders</TabsTrigger>
-            <TabsTrigger value="social">Social</TabsTrigger>
-            <TabsTrigger value="security">Seguridad</TabsTrigger>
-          </TabsList>
-          <TabsContent value="info">
-            <TokenInfoTab {...tokenInfo} />
-          </TabsContent>
-          <TabsContent value="holders">
-            <HoldersTab {...holdersData} />
-          </TabsContent>
-          <TabsContent value="social">
-            <SocialTab metrics={socialData} />
-          </TabsContent>
-          <TabsContent value="security">
-            <SecurityTab {...securityData} />
-          </TabsContent>
-        </Tabs>
+    <main className="min-h-screen bg-gradient-to-br from-blue-100 via-white to-purple-100 dark:from-purple-950 dark:via-gray-900 dark:to-blue-950">
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-card/90 backdrop-blur-sm rounded-lg shadow-lg p-6">
+          <h1 className="text-3xl font-bold mb-6 text-card-foreground">{token.name}</h1>
+          <Tabs defaultValue="info" className="w-full">
+            <TabsList className="w-full justify-start">
+              <TabsTrigger value="info">Información</TabsTrigger>
+              <TabsTrigger value="holders">Holders</TabsTrigger>
+              <TabsTrigger value="social">Social</TabsTrigger>
+              <TabsTrigger value="security">Seguridad</TabsTrigger>
+            </TabsList>
+            <TabsContent value="info">
+              <TokenInfoTab {...tokenInfo} />
+            </TabsContent>
+            <TabsContent value="holders">
+              <HoldersTab {...holdersData} />
+            </TabsContent>
+            <TabsContent value="social">
+              <SocialTab metrics={socialData} />
+            </TabsContent>
+            <TabsContent value="security">
+              <SecurityTab {...securityData} />
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }
