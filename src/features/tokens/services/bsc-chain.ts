@@ -505,11 +505,19 @@ export class BSCChainService extends BaseChainService {
 
         if (response.data.status === '1' && response.data.result) {
           const totalSupplyResult = await this.getTokenContract(address).totalSupply();
-          return (response.data.result as { address: string; balance: string }[]).map(holder => ({
-            address: holder.address,
-            balance: holder.balance,
-            percentage: (Number(holder.balance) / Number(totalSupplyResult)) * 100
-          }));
+          const decimals = await this.getTokenContract(address).decimals();
+          
+          return (response.data.result as { address: string; balance: string }[]).map(holder => {
+            const balance = BigInt(holder.balance);
+            const totalSupply = BigInt(totalSupplyResult);
+            const percentage = Number((balance * BigInt(10000) / totalSupply)) / 100;
+            
+            return {
+              address: holder.address,
+              balance: holder.balance,
+              percentage
+            };
+          });
         }
         
         return [];

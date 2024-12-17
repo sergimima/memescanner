@@ -1,15 +1,19 @@
+import { formatNumber, formatPercentage } from "@/utils/format";
+
 interface Holder {
   address: string;
   balance: string;
   percentage: number;
+  decimals?: number;
 }
 
 interface HoldersTabProps {
   holders: Holder[];
   totalHolders: number;
+  decimals: number;
 }
 
-export function HoldersTab({ holders, totalHolders }: HoldersTabProps) {
+export function HoldersTab({ holders, totalHolders, decimals }: HoldersTabProps) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -24,8 +28,8 @@ export function HoldersTab({ holders, totalHolders }: HoldersTabProps) {
               <span className="font-mono text-sm">{holder.address}</span>
             </div>
             <div className="text-right">
-              <p className="text-sm font-medium">{holder.balance}</p>
-              <p className="text-xs text-muted-foreground">{holder.percentage.toFixed(2)}%</p>
+              <p className="text-sm font-medium">{formatNumber(holder.balance, decimals)}</p>
+              <p className="text-xs text-muted-foreground">{formatPercentage(holder.percentage)}</p>
             </div>
           </div>
         ))}

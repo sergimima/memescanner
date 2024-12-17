@@ -141,7 +141,7 @@ export default function TokenPage() {
                 name: token.name,
                 symbol: token.symbol,
                 contract: token.address,
-                chain: token.chain || 'BSC',
+                chain: 'BSC',
                 totalSupply: token.totalSupply,
                 decimals: token.decimals,
                 marketCap: analysis.marketCap,
@@ -149,7 +149,7 @@ export default function TokenPage() {
               }} />
             </TabsContent>
             <TabsContent value="holders">
-              <HoldersTab {...holdersData} />
+              <HoldersTab {...holdersData} decimals={token.decimals} />
             </TabsContent>
             <TabsContent value="social">
               <SocialTab metrics={socialData} />
