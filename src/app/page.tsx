@@ -6,7 +6,7 @@ import { useTokenDetection } from "@/features/tokens/hooks/useTokenDetection"
 import { useNetwork } from '@/features/network/network-context'
 
 export default function Home() {
-  const { tokens, loading, error } = useTokenDetection({ autoRefresh: true }); // Activar análisis automático
+  const { tokens, loading, error, refreshTokens } = useTokenDetection(); // No necesitamos pasar autoRefresh
   const { network } = useNetwork()
 
   return (
@@ -17,7 +17,7 @@ export default function Home() {
             MemeScanner
           </h1>
           <button
-            onClick={() => refreshTokens()}
+            onClick={refreshTokens}
             disabled={loading}
             className="px-4 py-2 text-sm rounded-lg bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
