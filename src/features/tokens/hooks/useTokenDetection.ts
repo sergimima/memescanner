@@ -5,7 +5,11 @@ import { TokenBase } from '../types/token'
 import { BSCChainService } from '../services/bsc-chain'
 import { useNetwork } from '@/features/network/network-context'
 
-export function useTokenDetection() {
+export interface UseTokenDetectionProps {
+  autoRefresh?: boolean;
+}
+
+export function useTokenDetection({ autoRefresh = false }: UseTokenDetectionProps = {}) {
   const [tokens, setTokens] = useState<TokenBase[]>(() => {
     // Cargar tokens guardados al inicializar el estado
     try {
@@ -140,10 +144,12 @@ export function useTokenDetection() {
   // Detectar tokens iniciales y configurar polling
   useEffect(() => {
     detectNewTokens()
-    // Configurar un intervalo para detectar nuevos tokens cada 2 minutos
-    const interval = setInterval(detectNewTokens, 120000)
-    return () => clearInterval(interval)
-  }, [chainService])
+    if (autoRefresh) {
+      // Configurar un intervalo para detectar nuevos tokens cada 2 minutos
+      const interval = setInterval(detectNewTokens, 120000)
+      return () => clearInterval(interval)
+    }
+  }, [chainService, autoRefresh])
 
   return {
     tokens,

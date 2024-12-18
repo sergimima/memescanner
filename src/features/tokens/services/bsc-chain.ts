@@ -1392,4 +1392,17 @@ export class BSCChainService extends BaseChainService {
       hour12: false 
     });
   }
+
+  // Métodos públicos para acceso desde hooks
+  public async getSavedTokens(): Promise<TokenBase[]> {
+    return this.loadSavedTokens();
+  }
+
+  public async updateTokenData(address: string, analysis: TokenAnalysis, score: TokenScore): Promise<void> {
+    return this.updateTokenAnalysis(address, analysis, score);
+  }
+
+  public async fetchTokenData(address: string): Promise<Partial<TokenBase>> {
+    return this.getTokenData(address);
+  }
 }

@@ -31,10 +31,10 @@ export function useToken(address: string): TokenData {
         const chainService = BSCChainService.getInstance()
         const tokenContract = chainService.getTokenContract(address)
         const [name, symbol, decimals, totalSupply] = await Promise.all([
-          tokenContract.name(),
-          tokenContract.symbol(),
-          tokenContract.decimals(),
-          tokenContract.totalSupply()
+          tokenContract.name() as Promise<string>,
+          tokenContract.symbol() as Promise<string>,
+          tokenContract.decimals() as Promise<number>,
+          tokenContract.totalSupply() as Promise<bigint>
         ])
 
         const analysis = await chainService.analyzeToken(address)
