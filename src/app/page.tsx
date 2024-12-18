@@ -6,7 +6,7 @@ import { useTokenDetection } from "@/features/tokens/hooks/useTokenDetection"
 import { useNetwork } from '@/features/network/network-context'
 
 export default function Home() {
-  const { tokens, loading, error, refreshTokens } = useTokenDetection()
+  const { tokens, loading, error } = useTokenDetection({ autoRefresh: true }); // Activar análisis automático
   const { network } = useNetwork()
 
   return (

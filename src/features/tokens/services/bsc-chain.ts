@@ -1,31 +1,133 @@
 import { BaseChainService } from './base-chain'
 import { TokenBase, TokenAnalysis, TokenScore } from '../types/token'
-import { createPublicClient, http, parseAbi } from 'viem'
+import { createPublicClient, http, encodeFunctionData, decodeFunctionResult } from 'viem'
 import { bsc } from 'viem/chains'
-import axios, { AxiosError } from 'axios'
+import axios from 'axios'
 import { BSC_RPC_URLS, getRandomRPC } from '@/config/rpc'
 import { WebSocketService } from './websocket-service'
 import { ethers } from 'ethers';
 
 // ABI mínimo para verificar tokens
-const ERC20_ABI = parseAbi([
-  'function name() view returns (string)',
-  'function symbol() view returns (string)',
-  'function decimals() view returns (uint8)',
-  'function totalSupply() view returns (uint256)',
-  'function balanceOf(address) view returns (uint256)',
-  'function owner() view returns (address)',
-])
+const ERC20_ABI = [
+  {
+    "inputs": [],
+    "name": "name",
+    "outputs": [{ "type": "string" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "symbol",
+    "outputs": [{ "type": "string" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [{ "type": "uint8" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalSupply",
+    "outputs": [{ "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
 
 // ABI para PancakeSwap Factory
-const PANCAKESWAP_FACTORY_ABI = parseAbi([
-  'function getPair(address tokenA, address tokenB) view returns (address pair)',
-])
+const FACTORY_ABI = [
+  {
+    "inputs": [
+      { "type": "address" },
+      { "type": "address" }
+    ],
+    "name": "getPair",
+    "outputs": [{ "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
 
 // ABI para PancakeSwap Pair
-const PANCAKE_PAIR_ABI = parseAbi([
-  'function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)',
-])
+const PAIR_ABI = [
+  {
+    "inputs": [],
+    "name": "getReserves",
+    "outputs": [
+      { "type": "uint112" },
+      { "type": "uint112" },
+      { "type": "uint32" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "token0",
+    "outputs": [{ "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
+// ABI para PancakeSwap Router
+const PANCAKESWAP_ROUTER_ABI = [
+  {
+    "inputs": [
+      { "type": "uint" },
+      { "type": "address[]" }
+    ],
+    "name": "getAmountsOut",
+    "outputs": [{ "type": "uint[]" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
+
+// ABI para Multicall3
+const MULTICALL3_ABI = [
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "target",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes",
+            "name": "callData",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct Multicall3.Call[]",
+        "name": "calls",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "aggregate",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "blockNumber",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes[]",
+        "name": "returnData",
+        "type": "bytes[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+];
 
 // Direcciones importantes en BSC
 const ADDRESSES = {
@@ -35,6 +137,7 @@ const ADDRESSES = {
   DEAD_WALLET: '0x000000000000000000000000000000000000dEaD',
   BURN_WALLET: '0x0000000000000000000000000000000000000000',
   ZERO_ADDRESS: '0x0000000000000000000000000000000000000000',
+  MULTICALL3: '0xcA11bde05977b3631167028862bE2a173976CA11'
 } as const
 
 interface BSCScanEvent {
@@ -60,12 +163,29 @@ interface Holder {
   percentage: number;
 }
 
+const KNOWN_LOCKERS = [
+  '0x0000000000000000000000000000000000000000', // PinkSale
+  // Agregar más direcciones de lockers conocidos aquí
+];
+
+interface MulticallResult {
+  returnData: readonly `0x${string}`[];
+  blockNumber: bigint;
+}
+
+interface PairMulticallResult {
+  returnData: readonly `0x${string}`[];
+  blockNumber: bigint;
+}
+
+type DecodedData<T> = { result: T };
+
 export class BSCChainService extends BaseChainService {
   private static instance: BSCChainService | null = null;
-  readonly chainId = '56'
-  readonly chainName = 'BSC'
-  readonly scanApiUrl = 'https://api.bscscan.com/api'
-  readonly scanApiKey = process.env.NEXT_PUBLIC_BSCSCAN_API_KEY || ''
+  readonly chainId = '56';
+  readonly chainName = 'BSC';
+  readonly scanApiUrl = 'https://api.bscscan.com/api';
+  readonly scanApiKey = process.env.NEXT_PUBLIC_BSCSCAN_API_KEY || '';
   private wsService: WebSocketService;
   private processedTransactions = new Set<string>();
   private client: ReturnType<typeof createPublicClient> | null = null;
@@ -73,9 +193,11 @@ export class BSCChainService extends BaseChainService {
   private provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_BSC_RPC_URL);
   private analysisQueue: string[] = [];
   private isProcessingQueue = false;
-  private readonly CONCURRENT_REQUESTS = 3;
-  private readonly DELAY_BETWEEN_REQUESTS = 1000; // 1 segundo
+  private readonly CONCURRENT_REQUESTS = 1;
+  private readonly DELAY_BETWEEN_REQUESTS = 2000;
   private tokens: TokenBase[] = [];
+  private analysisCache: Record<string, { timestamp: number; data: TokenAnalysis }> = {};
+  private readonly CACHE_DURATION = 5 * 60 * 1000;
 
   private constructor() {
     super();
@@ -83,21 +205,24 @@ export class BSCChainService extends BaseChainService {
     this.chainName = 'BSC';
     this.STORAGE_KEY = 'bsc_tokens';
     this.provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_BSC_RPC_URL);
+    this.wsService = new WebSocketService();
     
-    // Cargar tokens guardados de forma asíncrona
-    this.loadAndUpdateTokens().catch(error => {
-      console.error(`[${this.formatTime(new Date())}] Error en la carga inicial de tokens:`, error);
-    });
-    
-    // Escuchar eventos del WebSocket
-    window.addEventListener('newPairEvent', ((event: CustomEvent) => {
-      const logData = event.detail.data;
-      if (logData && logData.token0 && logData.token1) {
-        this.processNewPairs([logData], 'websocket');
+    // Cargar caché de análisis
+    try {
+      const cachedAnalysis = localStorage.getItem('analysis_cache');
+      if (cachedAnalysis) {
+        this.analysisCache = JSON.parse(cachedAnalysis);
       }
-    }) as EventListener);
+    } catch (error) {
+      console.error('Error cargando caché de análisis:', error);
+    }
 
-    this.wsService = WebSocketService.getInstance();
+    // Solo cargar tokens guardados sin análisis
+    this.loadSavedTokens().then(tokens => {
+      this.tokens = tokens;
+    }).catch(error => {
+      console.error('Error cargando tokens guardados:', error);
+    });
   }
 
   public static getInstance(): BSCChainService {
@@ -114,11 +239,11 @@ export class BSCChainService extends BaseChainService {
     try {
       savedTokens = savedTokensJson ? JSON.parse(savedTokensJson) : [];
       if (!Array.isArray(savedTokens)) {
-        console.warn(`[${this.formatTime(new Date())}] Tokens guardados no es un array, reseteando`);
+        console.warn(`Tokens guardados no es un array, reseteando`);
         savedTokens = [];
       }
     } catch (e) {
-      console.warn(`[${this.formatTime(new Date())}] Error parseando tokens guardados, reseteando:`, e);
+      console.warn(`Error parseando tokens guardados, reseteando:`, e);
       savedTokens = [];
     }
 
@@ -145,7 +270,7 @@ export class BSCChainService extends BaseChainService {
       }
 
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(tokens));
-      console.log(`[${this.formatTime(new Date())}] Token ${existingTokenIndex === -1 ? 'guardado' : 'actualizado'}:`, token.address);
+      console.log(`Token ${existingTokenIndex === -1 ? 'guardado' : 'actualizado'}:`, token.address);
 
       // Emitir evento para actualizar la UI
       const loadedTokensEvent = new CustomEvent('tokensLoaded', {
@@ -153,7 +278,7 @@ export class BSCChainService extends BaseChainService {
       });
       window.dispatchEvent(loadedTokensEvent);
     } catch (error) {
-      console.error(`[${this.formatTime(new Date())}] Error guardando token:`, error);
+      console.error(`Error guardando token:`, error);
     }
   }
 
@@ -324,42 +449,157 @@ export class BSCChainService extends BaseChainService {
     if (cachedData) {
       const parsed = JSON.parse(cachedData);
       const cacheAge = Date.now() - parsed.timestamp;
-      // Caché válido por 5 minutos
       if (cacheAge < 5 * 60 * 1000) {
         return parsed.data;
       }
     }
 
     try {
-      const contract = this.getTokenContract(address);
-      const [name, symbol, decimals, totalSupply] = await Promise.all([
-        contract.name(),
-        contract.symbol(),
-        contract.decimals(),
-        contract.totalSupply()
-      ]);
+      const client = this.createClient();
 
-      const tokenData = {
-        address,
-        name,
-        symbol,
-        decimals: Number(decimals),
-        totalSupply: totalSupply.toString(),
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+      // Intentar primero con multicall
+      try {
+        const calls = [
+          {
+            target: address as `0x${string}`,
+            callData: encodeFunctionData({
+              abi: ERC20_ABI,
+              functionName: 'name',
+              args: [] as const
+            })
+          },
+          {
+            target: address as `0x${string}`,
+            callData: encodeFunctionData({
+              abi: ERC20_ABI,
+              functionName: 'symbol',
+              args: [] as const
+            })
+          },
+          {
+            target: address as `0x${string}`,
+            callData: encodeFunctionData({
+              abi: ERC20_ABI,
+              functionName: 'decimals',
+              args: [] as const
+            })
+          },
+          {
+            target: address as `0x${string}`,
+            callData: encodeFunctionData({
+              abi: ERC20_ABI,
+              functionName: 'totalSupply',
+              args: [] as const
+            })
+          }
+        ];
 
-      // Guardar en caché
-      localStorage.setItem(cacheKey, JSON.stringify({
-        data: tokenData,
-        timestamp: Date.now()
-      }));
+        const multicallResult = await client.readContract({
+          address: ADDRESSES.MULTICALL3 as `0x${string}`,
+          abi: MULTICALL3_ABI,
+          functionName: 'aggregate',
+          args: [calls]
+        }) as MulticallResult;
 
-      return tokenData;
+        if (multicallResult?.returnData && Array.isArray(multicallResult.returnData) && multicallResult.returnData.length === 4) {
+          const decodedResults = {
+            name: decodeFunctionResult({
+              abi: ERC20_ABI,
+              functionName: 'name',
+              data: multicallResult.returnData[0]
+            }) as string,
+            symbol: decodeFunctionResult({
+              abi: ERC20_ABI,
+              functionName: 'symbol',
+              data: multicallResult.returnData[1]
+            }) as string,
+            decimals: decodeFunctionResult({
+              abi: ERC20_ABI,
+              functionName: 'decimals',
+              data: multicallResult.returnData[2]
+            }) as number,
+            totalSupply: decodeFunctionResult({
+              abi: ERC20_ABI,
+              functionName: 'totalSupply',
+              data: multicallResult.returnData[3]
+            }) as bigint
+          };
+
+          if (decodedResults.name && decodedResults.symbol && typeof decodedResults.decimals === 'number') {
+            const tokenData: Partial<TokenBase> = {
+              address,
+              name: decodedResults.name as string,
+              symbol: decodedResults.symbol as string,
+              decimals: decodedResults.decimals,
+              totalSupply: decodedResults.totalSupply.toString(),
+              network: this.chainName,
+              createdAt: new Date()
+            };
+
+            localStorage.setItem(cacheKey, JSON.stringify({
+              data: tokenData,
+              timestamp: Date.now()
+            }));
+
+            return tokenData;
+          }
+        }
+        throw new Error('Multicall incompleto');
+      } catch (multicallError) {
+        console.log(`[getTokenData] Multicall falló para ${address}, intentando llamadas individuales`);
+        
+        // Si multicall falla, intentar llamadas individuales
+        try {
+          const [name, symbol, decimals, totalSupply] = await Promise.all([
+            client.readContract({
+              address: address as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: 'name',
+            }).catch(() => null) as Promise<string | null>,
+            client.readContract({
+              address: address as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: 'symbol',
+            }).catch(() => null) as Promise<string | null>,
+            client.readContract({
+              address: address as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: 'decimals',
+            }).catch(() => null) as Promise<number | null>,
+            client.readContract({
+              address: address as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: 'totalSupply',
+            }).catch(() => null) as Promise<bigint | null>
+          ]);
+
+          if (name && symbol && typeof decimals === 'number') {
+            const tokenData: Partial<TokenBase> = {
+              address,
+              name: name as string,
+              symbol: symbol as string,
+              decimals,
+              totalSupply: totalSupply ? totalSupply.toString() : '0',
+              network: this.chainName,
+              createdAt: new Date()
+            };
+
+            localStorage.setItem(cacheKey, JSON.stringify({
+              data: tokenData,
+              timestamp: Date.now()
+            }));
+
+            return tokenData;
+          }
+        } catch (individualError) {
+          console.error(`[getTokenData] Error en llamadas individuales para ${address}:`, individualError);
+        }
+      }
     } catch (error) {
-      console.error(`[${this.formatTime(new Date())}] Error obteniendo datos del token ${address}:`, error);
-      throw error;
+      console.error(`[getTokenData] Error general obteniendo datos del token ${address}:`, error);
     }
+
+    return { address };
   }
 
   public calculateScore(analysis: TokenAnalysis): TokenScore {
@@ -410,176 +650,411 @@ export class BSCChainService extends BaseChainService {
 
   public async analyzeToken(address: string): Promise<TokenAnalysis> {
     address = address.toLowerCase();
-    const cacheKey = `analysis_${address}`;
+    console.log(`[Análisis] Iniciando análisis para token:`, address);
     
-    try {
-      // Verificar caché primero
-      const cachedAnalysis = localStorage.getItem(cacheKey);
-      if (cachedAnalysis) {
-        const parsed = JSON.parse(cachedAnalysis);
-        const cacheAge = Date.now() - parsed.timestamp;
-        
-        if (cacheAge < 5 * 60 * 1000) {
-          console.log(`[${this.formatTime(new Date())}] Usando análisis en caché válido para: ${address}`);
-          return parsed.data;
-        }
-      }
+    const cached = this.analysisCache[address];
+    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      console.log(`[Análisis] Usando datos en caché para ${address}`);
+      return cached.data;
+    }
 
-      console.log(`[${this.formatTime(new Date())}] Realizando análisis completo para: ${address}`);
+    try {
+      console.log(`[Análisis] Obteniendo datos de liquidez...`);
+      const liquidityData = await this.getLiquidityData(address);
+      console.log(`[Análisis] Datos de liquidez:`, liquidityData);
+      await this.delay(this.DELAY_BETWEEN_REQUESTS);
       
-      // Realizar análisis completo
-      const [holders, liquidityData, contractData, distributionData, socialData] = await Promise.all([
-        this.getHolders(address),
-        this.getLiquidityData(address),
-        this.getContractData(address),
-        this.getDistributionData(address),
-        this.getSocialData(address)
+      console.log(`[Análisis] Obteniendo holders...`);
+      const holdersData = await this.getHolders(address);
+      console.log(`[Análisis] Holders encontrados:`, holdersData?.length || 0);
+      await this.delay(this.DELAY_BETWEEN_REQUESTS);
+      
+      console.log(`[Análisis] Obteniendo datos del contrato...`);
+      const contractData = await this.getContractData(address);
+      await this.delay(this.DELAY_BETWEEN_REQUESTS);
+      
+      console.log(`[Análisis] Obteniendo datos de distribución...`);
+      const distributionData = await this.getDistributionData(address);
+      await this.delay(this.DELAY_BETWEEN_REQUESTS);
+      
+      console.log(`[Análisis] Obteniendo datos sociales...`);
+      const socialData = await this.getSocialData(address);
+
+      const tokenContract = this.getTokenContract(address);
+      console.log(`[Análisis] Obteniendo supply y decimales...`);
+      const [totalSupplyBN, decimals] = await Promise.all([
+        tokenContract.totalSupply() as Promise<bigint>,
+        tokenContract.decimals() as Promise<number>
       ]);
 
-      const analysis: TokenAnalysis = {
-        holders,
-        liquidityUSD: liquidityData.liquidityUSD,
-        buyCount: 0,
-        sellCount: 0,
-        marketCap: 0,
-        price: 0,
-        lockedLiquidity: {
-          percentage: 0,
-          until: new Date(),
-          verified: false
-        },
-        ownership: {
-          renounced: false,
-          isMultisig: false
-        },
-        contract: {
-          verified: contractData.contract.verified,
-          hasHoneypot: contractData.contract.hasHoneypot,
-          hasUnlimitedMint: contractData.contract.hasUnlimitedMint,
-          hasTradingPause: contractData.contract.hasTradingPause,
-          maxTaxPercentage: contractData.contract.maxTaxPercentage,
-          hasDangerousFunctions: contractData.contract.hasDangerousFunctions
-        },
-        distribution: {
-          maxWalletPercentage: distributionData.distribution.maxWalletPercentage,
-          teamWalletPercentage: distributionData.distribution.teamWalletPercentage,
-          top10HoldersPercentage: distributionData.distribution.top10HoldersPercentage
-        },
-        social: {
-          telegram: socialData?.telegram,
-          twitter: socialData?.twitter,
-          website: socialData?.website,
-          followers: socialData?.followers || 0,
-          engagement: socialData?.engagement || 0
-        },
-        liquidityLocked: false,
-        liquidityLockDuration: undefined,
-        liquidityLockPlatform: undefined
-      };
+      console.log(`[Análisis] Supply:`, totalSupplyBN.toString(), `Decimales:`, decimals);
+      const adjustedSupply = Number(totalSupplyBN.toString()) / Math.pow(10, decimals);
+      console.log(`[Análisis] Supply ajustado:`, adjustedSupply);
+      
+      // Calcular precio usando la liquidez
+      const reserves = await this.getTokenReserves(address);
+      console.log(`[Análisis] Reservas:`, reserves);
+      
+      let price = 0;
+      let liquidityUSD = 0;
+      
+      if (reserves?.tokenReserve && reserves?.bnbReserve) {
+        const bnbPriceResponse = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT');
+        const bnbPrice = parseFloat(bnbPriceResponse.data.price);
+        console.log(`[Análisis] Precio BNB:`, bnbPrice);
+        
+        // Precio = (BNB Reserve * BNB Price) / Token Reserve
+        // Ajustar por decimales: BNB tiene 18 decimales, el token puede tener diferentes
+        const bnbValue = (Number(reserves.bnbReserve) / 1e18) * bnbPrice;
+        const tokenValue = Number(reserves.tokenReserve) / Math.pow(10, Number(decimals));
+        price = bnbValue / tokenValue;
+        liquidityUSD = bnbValue * 2; // Multiplicamos por 2 porque el valor de la liquidez es el doble del valor de BNB
+        
+        console.log(`[Análisis] Cálculo de precio:`, {
+          bnbReserve: reserves.bnbReserve,
+          tokenReserve: reserves.tokenReserve,
+          bnbPrice,
+          decimals,
+          bnbValue,
+          tokenValue,
+          price,
+          liquidityUSD
+        });
 
-      // Guardar en caché con timestamp
-      localStorage.setItem(cacheKey, JSON.stringify({
-        data: analysis,
-        timestamp: Date.now()
-      }));
+        // Convertir el precio a string con precisión completa
+        const priceString = price.toFixed(18);
+        console.log(`[Análisis] Precio como string:`, priceString);
+        
+        console.log(`[Análisis] Precio calculado:`, price);
+        const marketCap = price * adjustedSupply;
+        console.log(`[Análisis] Market Cap calculado:`, marketCap);
 
-      // Calcular y actualizar score
-      const score = this.calculateScore(analysis);
-      this.updateTokenAnalysis(address, analysis, score);
+        const analysis: TokenAnalysis = {
+          liquidityUSD,
+          holders: holdersData || [],
+          buyCount: 0,
+          sellCount: 0,
+          marketCap,
+          price: price.toFixed(18),
+          lockedLiquidity: {
+            percentage: Number(liquidityData?.lockedLiquidity?.percentage || 0),
+            until: liquidityData?.lockedLiquidity?.until ? new Date(liquidityData.lockedLiquidity.until) : new Date(),
+            verified: Boolean(liquidityData?.liquidityLocked)
+          },
+          ownership: {
+            renounced: Boolean(contractData?.ownership?.renounced),
+            isMultisig: Boolean(contractData?.ownership?.isMultisig)
+          },
+          contract: {
+            verified: Boolean(contractData?.contract?.verified),
+            hasHoneypot: Boolean(contractData?.contract?.hasHoneypot),
+            hasUnlimitedMint: Boolean(contractData?.contract?.hasUnlimitedMint),
+            hasTradingPause: Boolean(contractData?.contract?.hasTradingPause),
+            maxTaxPercentage: Number(contractData?.contract?.maxTaxPercentage || 0),
+            hasDangerousFunctions: Boolean(contractData?.contract?.hasDangerousFunctions)
+          },
+          distribution: {
+            maxWalletPercentage: Number(distributionData?.distribution?.maxWalletPercentage || 0),
+            teamWalletPercentage: Number(distributionData?.distribution?.teamWalletPercentage || 0),
+            top10HoldersPercentage: Number(distributionData?.distribution?.top10HoldersPercentage || 0)
+          },
+          social: socialData || {},
+          liquidityLocked: Boolean(liquidityData?.liquidityLocked),
+          liquidityLockDuration: liquidityData?.lockedLiquidity?.until ? 
+            Math.floor((new Date(liquidityData.lockedLiquidity.until).getTime() - Date.now()) / (1000 * 60 * 60 * 24)).toString() : undefined,
+          liquidityLockPlatform: liquidityData?.liquidityLocked ? 'PinkSale' : undefined
+        };
 
-      return analysis;
+        this.analysisCache[address] = {
+          timestamp: Date.now(),
+          data: analysis
+        };
+
+        try {
+          localStorage.setItem('analysis_cache', JSON.stringify(this.analysisCache));
+        } catch (error) {
+          console.error('Error guardando caché de análisis:', error);
+        }
+
+        console.log(`[Análisis] Análisis completado:`, analysis);
+        return analysis;
+      } else {
+        console.log(`[Análisis] No se encontraron reservas`);
+        return {
+          liquidityUSD: 0,
+          holders: [],
+          buyCount: 0,
+          sellCount: 0,
+          marketCap: 0,
+          price: '0',
+          lockedLiquidity: {
+            percentage: 0,
+            until: new Date(),
+            verified: false
+          },
+          ownership: {
+            renounced: false,
+            isMultisig: false
+          },
+          contract: {
+            verified: false,
+            hasHoneypot: false,
+            hasUnlimitedMint: false,
+            hasTradingPause: false,
+            maxTaxPercentage: 0,
+            hasDangerousFunctions: false
+          },
+          distribution: {
+            maxWalletPercentage: 0,
+            teamWalletPercentage: 0,
+            top10HoldersPercentage: 0
+          },
+          social: {
+            telegram: undefined,
+            twitter: undefined,
+            website: undefined,
+            followers: 0,
+            engagement: 0
+          },
+          liquidityLocked: false,
+          liquidityLockDuration: undefined,
+          liquidityLockPlatform: undefined
+        };
+      }
     } catch (error) {
-      console.error(`[${this.formatTime(new Date())}] Error analizando token ${address}:`, error);
+      console.error(`[Análisis] Error analizando token:`, error);
       throw error;
     }
   }
 
-  private async getHolders(address: string) {
-    return this.retryWithBackoff(async () => {
-      try {
-        const response = await axios.get(`/api/bscscan/holders`, {
-          params: {
-            address
-          }
-        });
+  private async isTokenTradeable(address: string): Promise<boolean> {
+    try {
+      const client = this.createClient();
+      
+      // Primero verificamos si existe el par en PancakeSwap
+      const pairCall = {
+        target: ADDRESSES.PANCAKE_FACTORY as `0x${string}`,
+        callData: encodeFunctionData({
+          abi: FACTORY_ABI,
+          functionName: 'getPair',
+          args: [address as `0x${string}`, ADDRESSES.WBNB as `0x${string}`]
+        }) as `0x${string}`
+      };
 
-        if (response.data.status === '1' && response.data.result) {
-          const totalSupplyResult = await this.getTokenContract(address).totalSupply();
-          const decimals = await this.getTokenContract(address).decimals();
-          
-          return (response.data.result as { address: string; balance: string }[]).map(holder => {
-            const balance = BigInt(holder.balance);
-            const totalSupply = BigInt(totalSupplyResult);
-            const percentage = Number((balance * BigInt(10000) / totalSupply)) / 100;
-            
-            return {
-              address: holder.address,
-              balance: holder.balance,
-              percentage
-            };
-          });
-        }
-        
-        return [];
-      } catch (error) {
-        if (axios.isAxiosError(error)) {
-          console.error('Error cargando datos de la API:', error.response ? error.response.data : error.message);
-        } else {
-          console.error('Error desconocido:', error);
-        }
-        return [];
+      const pairResult = await client.readContract({
+        address: ADDRESSES.PANCAKE_FACTORY as `0x${string}`,
+        abi: FACTORY_ABI,
+        functionName: 'getPair',
+        args: [address as `0x${string}`, ADDRESSES.WBNB as `0x${string}`]
+      }) as `0x${string}`;
+
+      if (!pairResult || pairResult === ADDRESSES.ZERO_ADDRESS) {
+        return false;
       }
-    }, 5);
+
+      // Verificar si la liquidez está bloqueada
+      const liquidityLockInfo = await this.isLiquidityLocked(pairResult);
+      console.log(`[Liquidez] Info de liquidez bloqueada:`, liquidityLockInfo);
+      
+      const reserves = await client.readContract({
+        address: pairResult,
+        abi: PAIR_ABI,
+        functionName: 'getReserves',
+        args: [] as readonly []
+      }) as [bigint, bigint, number];
+
+      const token0Address = await client.readContract({
+        address: pairResult,
+        abi: PAIR_ABI,
+        functionName: 'token0',
+        args: [] as readonly []
+      }) as `0x${string}`;
+
+      if (!reserves || !token0Address) {
+        return false;
+      }
+
+      const bnbPriceResponse = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT');
+      const bnbPrice = parseFloat(bnbPriceResponse.data.price);
+
+      const liquidityBNB = reserves[1].toString();
+      const liquidityUSD = (Number(liquidityBNB) / 1e18) * bnbPrice;
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async isLiquidityLocked(pairAddress: string): Promise<{
+    isLocked: boolean;
+    percentage?: number;
+    until?: string;
+  }> {
+    try {
+      // Verificar en PinkSale
+      const pinkLockResponse = await axios.get(`${this.scanApiUrl}`, {
+        params: {
+          module: 'account',
+          action: 'tokentx',
+          address: pairAddress,
+          apikey: this.scanApiKey
+        }
+      });
+
+      if (pinkLockResponse.data.status === '1') {
+        const transfers = pinkLockResponse.data.result;
+        const lockTransfers = transfers.filter((tx: any) => 
+          KNOWN_LOCKERS.includes(tx.to.toLowerCase())
+        );
+
+        if (lockTransfers.length > 0) {
+          const latestLock = lockTransfers[0];
+          return {
+            isLocked: true,
+            percentage: 100, // Por defecto asumimos 100%, esto debería refinarse
+            until: new Date(parseInt(latestLock.timeStamp) * 1000 + (365 * 24 * 60 * 60 * 1000)).toISOString() // Asumimos 1 año
+          };
+        }
+      }
+
+      return { isLocked: false };
+    } catch (error) {
+      console.error('Error verificando liquidez bloqueada:', error);
+      return { isLocked: false };
+    }
   }
 
   private async getLiquidityData(address: string) {
     return this.retryWithBackoff(async () => {
       try {
-        const client = this.createClient()
-        const pairAddress = await client.readContract({
+        const client = this.createClient();
+        console.log(`[Liquidez] Buscando par para el token:`, address);
+        
+        // Verificar si el token se puede tradear
+        const canTrade = await this.isTokenTradeable(address);
+        console.log(`[Liquidez] ¿Se puede tradear?:`, canTrade);
+        
+        const pairResult = await client.readContract({
           address: ADDRESSES.PANCAKE_FACTORY as `0x${string}`,
-          abi: PANCAKESWAP_FACTORY_ABI,
+          abi: FACTORY_ABI,
           functionName: 'getPair',
           args: [address as `0x${string}`, ADDRESSES.WBNB as `0x${string}`]
-        })
+        }) as `0x${string}`;
 
-        if (!pairAddress || pairAddress === ADDRESSES.ZERO_ADDRESS) {
+        if (!pairResult || pairResult === ADDRESSES.ZERO_ADDRESS) {
+          console.log(`[Liquidez] No se encontró par de liquidez para ${address}`);
           return {
             hasLiquidity: false,
             liquidityBNB: '0',
-            liquidityUSD: 0
-          }
+            liquidityUSD: 0,
+            liquidityLocked: false
+          };
         }
 
+        const pairAddress = pairResult;
+
+        // Verificar si la liquidez está bloqueada
+        const liquidityLockInfo = await this.isLiquidityLocked(pairAddress);
+        console.log(`[Liquidez] Info de liquidez bloqueada:`, liquidityLockInfo);
+        
         const reserves = await client.readContract({
-          address: pairAddress as `0x${string}`,
-          abi: PANCAKE_PAIR_ABI,
-          functionName: 'getReserves'
-        })
+          address: pairAddress,
+          abi: PAIR_ABI,
+          functionName: 'getReserves',
+          args: [] as readonly []
+        }) as [bigint, bigint, number];
 
         if (!reserves || !reserves[0] || !reserves[1]) {
           return {
             hasLiquidity: false,
             liquidityBNB: '0',
-            liquidityUSD: 0
-          }
+            liquidityUSD: 0,
+            liquidityLocked: false
+          };
         }
 
-        const liquidityBNB = reserves[1].toString()
+        const bnbPriceResponse = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT');
+        const bnbPrice = parseFloat(bnbPriceResponse.data.price);
+
+        const liquidityBNB = reserves[1].toString();
+        const liquidityUSD = (Number(liquidityBNB) / 1e18) * bnbPrice;
+
         return {
           hasLiquidity: true,
           liquidityBNB,
-          liquidityUSD: Number(liquidityBNB)
-        }
+          liquidityUSD,
+          liquidityLocked: liquidityLockInfo.isLocked,
+          lockedLiquidity: liquidityLockInfo.isLocked ? {
+            percentage: liquidityLockInfo.percentage || 0,
+            until: liquidityLockInfo.until || 'N/A',
+            verified: true
+          } : undefined
+        };
       } catch (error) {
-        console.error(`[${this.formatTime(new Date())}] Error obteniendo datos de liquidez:`, error)
+        console.error(`Error obteniendo datos de liquidez:`, error);
         return {
           hasLiquidity: false,
           liquidityBNB: '0',
-          liquidityUSD: 0
-        }
+          liquidityUSD: 0,
+          liquidityLocked: false
+        };
       }
-    })
+    }, 5);
+  }
+
+  async getTokenReserves(address: string): Promise<{
+    tokenReserve: string | null;
+    bnbReserve: string | null;
+  }> {
+    try {
+      const client = this.createClient();
+
+      // Primero verificamos si existe el par en PancakeSwap
+      const pairResult = await client.readContract({
+        address: ADDRESSES.PANCAKE_FACTORY as `0x${string}`,
+        abi: FACTORY_ABI,
+        functionName: 'getPair',
+        args: [address as `0x${string}`, ADDRESSES.WBNB as `0x${string}`]
+      }) as `0x${string}`;
+
+      if (!pairResult || pairResult === ADDRESSES.ZERO_ADDRESS) {
+        console.log(`[Liquidez] No se encontró par de liquidez para ${address}`);
+        return { tokenReserve: null, bnbReserve: null };
+      }
+
+      // Obtenemos las reservas y el token0
+      const [reserves, token0] = await Promise.all([
+        client.readContract({
+          address: pairResult,
+          abi: PAIR_ABI,
+          functionName: 'getReserves',
+          args: [] as readonly []
+        }) as Promise<[bigint, bigint, number]>,
+        client.readContract({
+          address: pairResult,
+          abi: PAIR_ABI,
+          functionName: 'token0',
+          args: [] as readonly []
+        }) as Promise<`0x${string}`>
+      ]);
+
+      if (!reserves || !token0) {
+        console.log(`[Liquidez] No se pudieron obtener las reservas para ${address}`);
+        return { tokenReserve: null, bnbReserve: null };
+      }
+
+      const [reserve0, reserve1] = reserves;
+      const isToken0 = token0.toLowerCase() === address.toLowerCase();
+
+      return {
+        tokenReserve: (isToken0 ? reserve0 : reserve1).toString(),
+        bnbReserve: (isToken0 ? reserve1 : reserve0).toString()
+      };
+    } catch (error) {
+      console.error('Error obteniendo reservas:', error);
+      return { tokenReserve: null, bnbReserve: null };
+    }
   }
 
   private async getContractData(address: string) {
@@ -622,6 +1097,61 @@ export class BSCChainService extends BaseChainService {
     }
   }
 
+  private async getHolders(address: string) {
+    return this.retryWithBackoff(async () => {
+      try {
+        console.log(`[Holders] Obteniendo holders para ${address}`);
+        const response = await axios.get(this.scanApiUrl, {
+          params: {
+            module: 'token',
+            action: 'tokenholderlist',
+            contractaddress: address,
+            page: 1,
+            offset: 100,
+            apikey: this.scanApiKey
+          }
+        });
+
+        console.log(`[Holders] Respuesta de la API:`, response.data);
+
+        if (response.data.status === '1' && Array.isArray(response.data.result)) {
+          const tokenContract = this.getTokenContract(address);
+          const [totalSupplyBN, decimals] = await Promise.all([
+            tokenContract.totalSupply() as Promise<bigint>,
+            tokenContract.decimals() as Promise<number>
+          ]);
+          
+          const totalSupply = BigInt(totalSupplyBN.toString());
+          const holders = response.data.result
+            .filter((holder: any) => 
+              holder.address.toLowerCase() !== ADDRESSES.DEAD_WALLET.toLowerCase() &&
+              holder.address.toLowerCase() !== ADDRESSES.BURN_WALLET.toLowerCase() &&
+              holder.address.toLowerCase() !== ADDRESSES.ZERO_ADDRESS.toLowerCase()
+            )
+            .map((holder: any) => {
+              const balance = BigInt(holder.TokenHolderQuantity);
+              const percentage = Number((balance * BigInt(10000) / totalSupply)) / 100;
+              
+              return {
+                address: holder.TokenHolderAddress,
+                balance: holder.TokenHolderQuantity,
+                percentage
+              };
+            });
+
+          console.log(`[Holders] Holders procesados:`, holders.length);
+          return holders;
+        }
+        
+        console.log(`[Holders] No se encontraron holders válidos`);
+        return [];
+      } catch (error) {
+        console.error('[Holders] Error obteniendo holders:', error);
+        return [];
+      }
+    }, 5);
+  }
+
   public getTokenContract(address: string) {
     const client = this.createClient()
     if (!client) {
@@ -631,22 +1161,26 @@ export class BSCChainService extends BaseChainService {
       name: async () => client.readContract({
         address: address as `0x${string}`,
         abi: ERC20_ABI,
-        functionName: 'name'
+        functionName: 'name',
+        args: [] as readonly []
       }),
       symbol: async () => client.readContract({
         address: address as `0x${string}`,
         abi: ERC20_ABI,
-        functionName: 'symbol'
+        functionName: 'symbol',
+        args: [] as readonly []
       }),
       decimals: async () => client.readContract({
         address: address as `0x${string}`,
         abi: ERC20_ABI,
-        functionName: 'decimals'
+        functionName: 'decimals',
+        args: [] as readonly []
       }),
       totalSupply: async () => client.readContract({
         address: address as `0x${string}`,
         abi: ERC20_ABI,
-        functionName: 'totalSupply'
+        functionName: 'totalSupply',
+        args: [] as readonly []
       })
     }
   }
@@ -657,19 +1191,23 @@ export class BSCChainService extends BaseChainService {
 
     try {
       while (this.analysisQueue.length > 0) {
-        const batch = this.analysisQueue.splice(0, this.CONCURRENT_REQUESTS);
-        const promises = batch.map(async (address) => {
-          try {
-            const analysis = await this.analyzeToken(address);
-            const score = this.calculateScore(analysis);
-            await this.updateTokenAnalysis(address, analysis, score);
-          } catch (error) {
-            console.error(`[${this.formatTime(new Date())}] Error analizando token ${address}:`, error);
-          }
-          await this.delay(this.DELAY_BETWEEN_REQUESTS);
-        });
+        const address = this.analysisQueue.shift();
+        if (!address) continue;
 
-        await Promise.all(promises);
+        // Verificar si ya existe en caché y es válido
+        const cached = this.analysisCache[address];
+        if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+          continue;
+        }
+
+        try {
+          const analysis = await this.analyzeToken(address);
+          const score = this.calculateScore(analysis);
+          await this.updateTokenAnalysis(address, analysis, score);
+          await new Promise(resolve => setTimeout(resolve, this.DELAY_BETWEEN_REQUESTS));
+        } catch (error) {
+          console.error(`Error procesando token ${address}:`, error);
+        }
       }
     } finally {
       this.isProcessingQueue = false;
@@ -682,27 +1220,18 @@ export class BSCChainService extends BaseChainService {
     
     // Verificar si el token ya está en la cola o está siendo procesado
     if (this.analysisQueue.includes(address)) {
-      console.log(`[${this.formatTime(new Date())}] Token ${address} ya está en la cola de análisis`);
+      console.log(`Token ${address} ya está en la cola de análisis`);
       return;
     }
 
     // Verificar si el token tiene un análisis reciente en caché
-    const cacheKey = `analysis_${address}`;
-    const cachedAnalysis = localStorage.getItem(cacheKey);
-    if (cachedAnalysis) {
-      try {
-        const parsed = JSON.parse(cachedAnalysis);
-        const cacheAge = Date.now() - parsed.timestamp;
-        if (cacheAge < 5 * 60 * 1000) { // Caché válido por 5 minutos
-          console.log(`[${this.formatTime(new Date())}] Usando análisis en caché para: ${address}`);
-          return;
-        }
-      } catch {
-        // Si hay error al parsear el caché, continuamos con el análisis
-      }
+    const cached = this.analysisCache[address];
+    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      console.log(`Usando análisis en caché para: ${address}`);
+      return;
     }
 
-    console.log(`[${this.formatTime(new Date())}] Añadiendo token ${address} a la cola de análisis`);
+    console.log(`Añadiendo token ${address} a la cola de análisis`);
     this.analysisQueue.push(address);
     
     // Iniciar el procesamiento si no está en curso
@@ -714,45 +1243,48 @@ export class BSCChainService extends BaseChainService {
   private async updateTokenAnalysis(address: string, analysis: TokenAnalysis, score: TokenScore) {
     try {
       const tokenData = await this.getTokenData(address);
+      
+      // Verificar que tenemos todos los datos necesarios
+      if (!tokenData.address || !tokenData.name || !tokenData.symbol || 
+          tokenData.decimals === undefined || !tokenData.totalSupply) {
+        throw new Error(`Datos incompletos para el token ${address}`);
+      }
+
       const updatedToken: TokenBase = {
-        ...tokenData,
+        address: tokenData.address,
+        name: tokenData.name,
+        symbol: tokenData.symbol,
+        decimals: tokenData.decimals,
+        totalSupply: tokenData.totalSupply,
+        network: this.chainName,
+        createdAt: new Date(),
         analysis,
-        score,
-        updatedAt: new Date()
-      } as TokenBase;
+        score
+      };
+
       this.saveToken(updatedToken);
     } catch (error) {
-      console.error(`[${this.formatTime(new Date())}] Error actualizando análisis del token ${address}:`, error);
+      console.error(`Error actualizando análisis del token ${address}:`, error);
     }
   }
 
   /**
    * Carga y actualiza los tokens guardados
    */
-  public async loadAndUpdateTokens() {
+  public async loadAndUpdateTokens(autoAnalyze = false) {
     try {
       // Cargar tokens guardados
-      this.tokens = await this.loadSavedTokens();
+      const savedTokens = await this.loadSavedTokens();
+      this.tokens = savedTokens;
 
-      // Obtener nuevos tokens
-      const newTokens = await this.getNewTokens();
-      
-      // Procesar nuevos tokens
-      for (const token of newTokens) {
-        if (!this.tokens.find(t => t.address === token.address)) {
-          this.tokens.push(token);
-          await this.saveToken(token);
+      if (autoAnalyze) {
+        // Solo analizar si se solicita explícitamente
+        for (const token of savedTokens) {
+          await this.queueTokenAnalysis(token.address);
         }
       }
 
-      // Actualizar tokens existentes que lo necesiten
-      for (const token of this.tokens) {
-        if (this.needsUpdate(token)) {
-          this.queueTokenAnalysis(token.address);
-        }
-      }
-
-      return this.tokens;
+      return savedTokens;
     } catch (error) {
       console.error('Error en loadAndUpdateTokens:', error);
       throw error;
@@ -775,106 +1307,80 @@ export class BSCChainService extends BaseChainService {
     }
   }
 
-  private async processNewPairs(logs: BSCScanEvent[], source: 'websocket' | 'polling' = 'polling') {
-    try {
-      const now = new Date();
-      console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Procesando ${logs.length} eventos de nuevos pares`);
-      
-      // Extraer las direcciones de los tokens
-      const addresses = logs.flatMap(event => {
-        // Si ya procesamos esta transacción, ignorarla
-        if (this.processedTransactions.has(event.transactionHash)) {
-          console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Transacción ya procesada:`, event.transactionHash);
-          return [];
+  async processNewPairs(logs: BSCScanEvent[], source: 'websocket' | 'polling' = 'polling') {
+    for (const log of logs) {
+      try {
+        const token0 = '0x' + log.topics[1].slice(26).toLowerCase();
+        const token1 = '0x' + log.topics[2].slice(26).toLowerCase();
+        const pairAddress = '0x' + log.data.slice(26).toLowerCase();
+
+        // Ignorar si alguna dirección es inválida
+        if (!token0 || !token1 || !pairAddress) {
+          console.warn('Direcciones inválidas en el evento:', { token0, token1, pairAddress });
+          continue;
         }
 
-        // Usar token0 y token1 si están disponibles (desde WebSocket)
-        if ('token0' in event && 'token1' in event && event.token0 && event.token1) {
-          console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Par encontrado (WebSocket):`, {
-            token0: event.token0,
-            token1: event.token1,
-            pairAddress: event.pairAddress,
-            blockNumber: event.blockNumber,
-            transactionHash: event.transactionHash
-          });
-          
-          // Marcar como procesado DESPUÉS de obtener las direcciones
-          this.processedTransactions.add(event.transactionHash);
-          return [event.token0, event.token1];
-        }
-        
-        // Fallback para eventos de polling
-        if (!event.topics || event.topics.length < 3) {
-          console.warn(`[${this.formatTime(now)}][${source.toUpperCase()}] Evento inválido, faltan topics:`, event);
-          return [];
+        // Verificar si ya hemos procesado este par
+        if (this.processedTransactions.has(pairAddress)) {
+          continue;
         }
 
-        const token0 = '0x' + event.topics[1].slice(26);
-        const token1 = '0x' + event.topics[2].slice(26);
-        
-        console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Par encontrado (Polling):`, {
+        // Marcar como procesado
+        this.processedTransactions.add(pairAddress);
+
+        // Identificar el token (el que no es WBNB)
+        const tokenAddress = token0.toLowerCase() === ADDRESSES.WBNB.toLowerCase() ? token1 : token0;
+
+        // Verificar si el token es tradeable antes de continuar
+        const isTradeable = await this.isTokenTradeable(tokenAddress);
+        if (!isTradeable) {
+          console.log(`[${this.formatTime(new Date())}] Token ${tokenAddress} no es tradeable, ignorando`);
+          continue;
+        }
+
+        console.log(`[${this.formatTime(new Date())}] Nuevo par detectado (${source}):`, {
           token0,
           token1,
-          blockNumber: event.blockNumber,
-          transactionHash: event.transactionHash
+          pairAddress,
+          tokenAddress
         });
 
-        // Marcar como procesado DESPUÉS de obtener las direcciones
-        this.processedTransactions.add(event.transactionHash);
-        return [token0, token1];
-      }).filter(address => {
-        const isWBNB = address.toLowerCase() === ADDRESSES.WBNB.toLowerCase();
-        const isPancakeFactory = address.toLowerCase() === ADDRESSES.PANCAKE_FACTORY.toLowerCase();
-        if (isWBNB || isPancakeFactory) {
-          console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Ignorando dirección conocida:`, {
-            address,
-            isWBNB,
-            isPancakeFactory
-          });
-          return false;
+        // Obtener datos básicos del token
+        const tokenData = await this.getTokenData(tokenAddress);
+        if (!tokenData.address || !tokenData.name || !tokenData.symbol || 
+            tokenData.decimals === undefined || !tokenData.totalSupply) {
+          console.warn(`Token incompleto, ignorando:`, tokenData);
+          continue;
         }
-        return true;
-      });
 
-      const uniqueAddresses = [...new Set(addresses)];
-      console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Direcciones después de filtrar:`, uniqueAddresses);
-      
-      if (uniqueAddresses.length > 0) {
-        console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Procesando ${uniqueAddresses.length} direcciones únicas:`, uniqueAddresses);
-        
-        // Procesar cada token único
-        for (const address of uniqueAddresses) {
-          try {
-            console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Obteniendo datos del token: ${address}`);
-            const tokenData = await this.getTokenData(address);
-            console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Datos obtenidos para ${address}:`, tokenData);
-            
-            if (this.isValidToken(tokenData)) {
-              console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Token válido encontrado:`, {
-                address: tokenData.address,
-                name: tokenData.name,
-                symbol: tokenData.symbol,
-                decimals: tokenData.decimals,
-                totalSupply: tokenData.totalSupply
-              });
-              
-              // Analizar el token antes de guardarlo
-              this.queueTokenAnalysis(tokenData.address);
-            } else {
-              console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] Token inválido:`, {
-                address,
-                tokenData
-              });
-            }
-          } catch (error) {
-            console.error(`[${this.formatTime(now)}][${source.toUpperCase()}] Error procesando token ${address}:`, error);
-          }
-        }
-      } else {
-        console.log(`[${this.formatTime(now)}][${source.toUpperCase()}] No hay direcciones únicas para procesar`);
+        // Analizar el token
+        const analysis = await this.analyzeToken(tokenAddress);
+        const score = this.calculateScore(analysis);
+
+        const token: TokenBase = {
+          address: tokenData.address,
+          name: tokenData.name,
+          symbol: tokenData.symbol,
+          decimals: tokenData.decimals,
+          totalSupply: tokenData.totalSupply,
+          network: this.chainName,
+          createdAt: new Date(),
+          analysis,
+          score
+        };
+
+        // Guardar el token
+        await this.saveToken(token);
+
+        // Emitir evento de nuevo token
+        const newTokenEvent = new CustomEvent('newToken', {
+          detail: { token }
+        });
+        window.dispatchEvent(newTokenEvent);
+
+      } catch (error) {
+        console.error('Error procesando nuevo par:', error);
       }
-    } catch (error) {
-      console.error(`[${this.formatTime(new Date())}][${source.toUpperCase()}] Error procesando eventos:`, error);
     }
   }
 

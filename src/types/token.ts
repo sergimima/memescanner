@@ -7,7 +7,7 @@ export interface TokenAnalysis {
   price: number;
   lockedLiquidity: {
     percentage: number;
-    until: Date;
+    until: string;
     verified: boolean;
   };
   ownership: {
@@ -32,6 +32,7 @@ export interface TokenAnalysis {
     website: string;
   };
   liquidityLocked: boolean;
+  canTrade: boolean;
 }
 
 export interface TokenScore {

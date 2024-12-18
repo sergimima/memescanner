@@ -29,6 +29,14 @@ export function formatNumber(value: bigint | string | number, decimals: number =
 }
 
 export function formatUSD(value: number): string {
+  if (value < 0.000001) {
+    // Para números muy pequeños, usar notación científica
+    return `$${value.toExponential(6)}`
+  } else if (value < 1) {
+    // Para números pequeños pero no tanto, mostrar todos los decimales necesarios
+    return `$${value.toFixed(10)}`
+  }
+  
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',

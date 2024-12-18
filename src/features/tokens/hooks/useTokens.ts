@@ -3,11 +3,12 @@ import { TokenBase } from '@/types/token';
 import { BSCChainService } from '../services/bsc-chain';
 import { useNetwork } from '@/features/network/network-context';
 
-export function useTokens() {
+export function useTokens(options: { autoRefresh?: boolean } = { autoRefresh: false }) {
   const [tokens, setTokens] = useState<TokenBase[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const { network } = useNetwork();
+  const [lastRefresh, setLastRefresh] = useState<Record<string, number>>({});
 
   const chainService = network === 'bsc' ? BSCChainService.getInstance() : null;
 
@@ -17,7 +18,6 @@ export function useTokens() {
         const savedTokensJson = localStorage.getItem('bsc_tokens');
         if (savedTokensJson) {
           const savedTokens: TokenBase[] = JSON.parse(savedTokensJson);
-          console.log(`[${new Date().toLocaleTimeString()}] Cargando ${savedTokens.length} tokens guardados`);
           setTokens(savedTokens);
         }
       } catch (error) {
@@ -136,7 +136,9 @@ export function useTokens() {
     setError(null);
 
     try {
-      await chainService.loadAndUpdateTokens();
+      // Solo cargar tokens guardados, sin análisis automático
+      const savedTokens = await chainService.loadSavedTokens();
+      setTokens(savedTokens);
     } catch (error) {
       console.error('Error actualizando tokens:', error);
       setError(error as Error);
@@ -145,10 +147,93 @@ export function useTokens() {
     }
   };
 
+  const updateToken = async (address: string) => {
+    // Verificar si el token fue actualizado recientemente (en los últimos 5 minutos)
+    const now = Date.now();
+    const lastUpdate = lastRefresh[address] || 0;
+    const REFRESH_COOLDOWN = 5 * 60 * 1000; // 5 minutos
+
+    if (now - lastUpdate < REFRESH_COOLDOWN) {
+      console.log(`Token ${address} fue actualizado recientemente. Esperando ${Math.ceil((REFRESH_COOLDOWN - (now - lastUpdate)) / 1000)} segundos.`);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const service = BSCChainService.getInstance();
+      const analysis = await service.analyzeToken(address);
+      const score = service.calculateScore(analysis);
+      await service.updateTokenAnalysis(address, analysis, score);
+      
+      // Actualizar el timestamp del último refresco
+      setLastRefresh(prev => ({
+        ...prev,
+        [address]: now
+      }));
+
+      // Obtener datos actualizados del token y actualizar el estado
+      const tokenData = await service.getTokenData(address);
+      const updatedToken: TokenBase = {
+        ...tokenData,
+        network: 'BSC',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        analysis,
+        score
+      };
+
+      // Emitir evento de actualización
+      const updateEvent = new CustomEvent('tokenUpdated', {
+        detail: { token: updatedToken }
+      });
+      window.dispatchEvent(updateEvent);
+
+      // Actualizar el estado local
+      setTokens(prevTokens => 
+        prevTokens.map(token => 
+          token.address.toLowerCase() === address.toLowerCase() 
+            ? updatedToken
+            : token
+        )
+      );
+
+      // Actualizar localStorage
+      try {
+        const savedTokensJson = localStorage.getItem('bsc_tokens');
+        if (savedTokensJson) {
+          const savedTokens = JSON.parse(savedTokensJson);
+          const updatedTokens = savedTokens.map((token: TokenBase) =>
+            token.address.toLowerCase() === address.toLowerCase()
+              ? updatedToken
+              : token
+          );
+          localStorage.setItem('bsc_tokens', JSON.stringify(updatedTokens));
+        }
+      } catch (error) {
+        console.error('Error actualizando localStorage:', error);
+      }
+
+      return updatedToken;
+    } catch (error) {
+      setError(error as Error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Solo cargar tokens guardados al montar el componente
+  useEffect(() => {
+    if (options.autoRefresh) {
+      refreshTokens();
+    }
+  }, [options.autoRefresh]);
+
   return { 
     tokens, 
     loading, 
     error,
-    refreshTokens
+    refreshTokens,
+    updateToken
   };
 }

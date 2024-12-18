@@ -7,16 +7,33 @@ import { SocialTab } from "@/components/token/social-tab";
 import { SecurityTab } from "@/components/token/security-tab";
 import { useTokens } from "@/features/tokens/hooks/useTokens";
 import { useParams } from "next/navigation";
-import { TokenBase, TokenHolder, TokenAnalysis, TokenScore } from "@/types/token";
+import { TokenBase } from "@/types/token";
+import { useState, useEffect } from "react";
 
 export default function TokenPage() {
   const params = useParams();
-  const { tokens } = useTokens();
+  const { tokens, updateToken } = useTokens({ autoRefresh: false }); // Desactivar análisis automático
+  const [isLoading, setIsLoading] = useState(false);
+  const [localToken, setLocalToken] = useState<TokenBase | null>(null);
 
   // Asegurarnos de que address es un string
   const address = typeof params?.address === 'string' ? params.address : '';
   
-  const token = tokens.find((t: TokenBase) => t.address.toLowerCase() === address.toLowerCase());
+  const token = localToken || tokens.find((t: TokenBase) => t.address.toLowerCase() === address.toLowerCase());
+
+  useEffect(() => {
+    const handleTokenUpdate = (event: CustomEvent<{ token: TokenBase }>) => {
+      const updatedToken = event.detail.token;
+      if (updatedToken.address.toLowerCase() === address.toLowerCase()) {
+        setLocalToken(updatedToken);
+      }
+    };
+
+    window.addEventListener('tokenUpdated', handleTokenUpdate as EventListener);
+    return () => {
+      window.removeEventListener('tokenUpdated', handleTokenUpdate as EventListener);
+    };
+  }, [address]);
 
   if (!token) {
     return (
@@ -27,98 +44,91 @@ export default function TokenPage() {
     );
   }
 
-  // Asegurarnos de que el análisis existe
-  const analysis = token.analysis || {
-    liquidityUSD: 0,
-    holders: [],
-    buyCount: 0,
-    sellCount: 0,
-    marketCap: 0,
-    price: 0,
-    lockedLiquidity: {
-      percentage: 0,
-      until: new Date(),
-      verified: false
-    },
-    ownership: {
-      renounced: false,
-      isMultisig: false
-    },
-    contract: {
-      verified: false,
-      hasHoneypot: false,
-      hasUnlimitedMint: false,
-      hasTradingPause: false,
-      maxTaxPercentage: 0,
-      hasDangerousFunctions: false
-    },
-    distribution: {
-      maxWalletPercentage: 0,
-      topHolders: []
-    },
-    social: {
-      telegram: '',
-      twitter: '',
-      website: ''
+  const handleRefresh = async () => {
+    setIsLoading(true);
+    try {
+      await updateToken(token.address);
+      // Esperar un momento para que se actualice el estado
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      console.error('Error actualizando el token:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const defaultScore: TokenScore = {
-    total: 0,
-    security: 0,
-    liquidity: 0,
-    community: 0
+  // Preparar datos para el TokenInfoTab
+  const tokenInfo = {
+    name: token.name,
+    symbol: token.symbol,
+    contract: token.address,
+    chain: 'BSC',
+    totalSupply: token.totalSupply,
+    decimals: token.decimals,
+    marketCap: token.analysis?.marketCap || 0,
+    price: String(token.analysis?.price || '0'), // Asegurar que siempre es string
+    liquidityUSD: token.analysis?.liquidityUSD,
+    liquidityLocked: token.analysis?.liquidityLocked || false,
+    liquidityLockedPercentage: token.analysis?.lockedLiquidity?.percentage || 0,
+    liquidityLockedUntil: token.analysis?.lockedLiquidity?.until || 'N/A',
+    holders: token.analysis?.holders?.length || 0,
+    buyCount: token.analysis?.buyCount,
+    sellCount: token.analysis?.sellCount,
+    canTrade: token.analysis?.canTrade || false
   };
 
-  const score = token.score || defaultScore;
+  console.log('[UI] Token completo:', token);
+  console.log('[UI] Token analysis:', token.analysis);
+  console.log('[UI] Token info preparado:', tokenInfo);
 
-  // Formatear los holders para la visualización
+  // Preparar datos para el HoldersTab
   const holdersData = {
-    holders: analysis.holders.map((holder: TokenHolder) => ({
-      address: holder.address,
-      balance: Number(holder.balance).toLocaleString(),
-      percentage: holder.percentage
-    })),
-    totalHolders: analysis.holders.length
+    holders: token.analysis?.holders || [],
+    totalHolders: token.analysis?.holders?.length || 0,
+    decimals: token.decimals
   };
 
+  // Preparar datos para el SocialTab
   const socialData = {
     twitter: {
-      followers: Number(analysis.social?.twitter) || 0,
-      engagement: Number(analysis.social?.twitter) || 0
+      followers: 0, // Por ahora no tenemos estos datos
+      engagement: 0
     },
     telegram: {
-      members: Number(analysis.social?.telegram) || 0,
-      activeUsers: Number(analysis.social?.telegram) || 0
+      members: 0, // Por ahora no tenemos estos datos
+      activeUsers: 0
     },
     sentiment: {
-      positive: Number(analysis.social?.twitter) || 0,
-      neutral: Number(analysis.social?.twitter) || 0,
-      negative: Number(analysis.social?.twitter) || 0
+      positive: 0,
+      neutral: 0,
+      negative: 0
     }
   };
 
+  // Preparar datos para el SecurityTab
   const securityData = {
-    securityScore: score.security,
+    securityScore: token.score?.security || 0,
     liquidityLocked: {
-      amount: `$${analysis.liquidityUSD.toLocaleString()}`,
-      duration: analysis.lockedLiquidity.until ? new Date(analysis.lockedLiquidity.until).toISOString() : 'N/A',
-      platform: analysis.lockedLiquidity.verified ? 'Verificado' : 'N/A'
+      amount: token.analysis?.lockedLiquidity?.percentage?.toString() || '0',
+      duration: typeof token.analysis?.lockedLiquidity?.until === 'string' 
+        ? token.analysis.lockedLiquidity.until 
+        : 'N/A',
+      platform: token.analysis?.liquidityLocked ? 'PinkSale' : 'Desconocido'
     },
     checks: [
       {
         name: 'Contrato Verificado',
-        passed: analysis.contract.verified,
+        passed: token.analysis?.contract?.verified || false,
         description: 'El código del contrato está verificado en el explorador'
       },
       {
         name: 'Liquidez Bloqueada',
-        passed: analysis.lockedLiquidity.verified,
+        passed: token.analysis?.liquidityLocked || false,
         description: 'La liquidez está bloqueada en una plataforma confiable'
       },
       {
         name: 'Sin Funciones Peligrosas',
-        passed: !analysis.contract.hasDangerousFunctions,
+        passed: !token.analysis?.contract?.hasDangerousFunctions || false,
         description: 'El contrato no tiene funciones que puedan ser peligrosas'
       }
     ]
@@ -137,19 +147,14 @@ export default function TokenPage() {
               <TabsTrigger value="security">Seguridad</TabsTrigger>
             </TabsList>
             <TabsContent value="info">
-              <TokenInfoTab token={{
-                name: token.name,
-                symbol: token.symbol,
-                contract: token.address,
-                chain: 'BSC',
-                totalSupply: token.totalSupply,
-                decimals: token.decimals,
-                marketCap: analysis.marketCap,
-                price: analysis.price
-              }} />
+              <TokenInfoTab 
+                token={tokenInfo} 
+                onRefresh={handleRefresh}
+                isLoading={isLoading}
+              />
             </TabsContent>
             <TabsContent value="holders">
-              <HoldersTab {...holdersData} decimals={token.decimals} />
+              <HoldersTab {...holdersData} />
             </TabsContent>
             <TabsContent value="social">
               <SocialTab metrics={socialData} />

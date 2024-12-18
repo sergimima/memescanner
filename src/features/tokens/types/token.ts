@@ -23,7 +23,7 @@ export interface TokenAnalysis {
   buyCount: number
   sellCount: number
   marketCap: number
-  price: number
+  price: string
   lockedLiquidity: {
     percentage: number
     until: Date
