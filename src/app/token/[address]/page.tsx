@@ -85,7 +85,8 @@ export default function TokenPage() {
   const holdersData = {
     holders: token.analysis?.holders || [],
     totalHolders: token.analysis?.holders?.length || 0,
-    decimals: token.decimals
+    decimals: token.decimals,
+    tokenAddress: token.address
   };
 
   // Preparar datos para el SocialTab

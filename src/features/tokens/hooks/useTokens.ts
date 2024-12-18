@@ -83,12 +83,16 @@ export function useTokens(options: { autoRefresh?: boolean } = { autoRefresh: fa
     loadSavedTokens();
 
     // Configurar event listeners
-    window.addEventListener('newTokenFound', handleNewToken as EventListener);
-    window.addEventListener('tokensLoaded', handleTokensLoaded as EventListener);
+    window.addEventListener('newTokenFound', handleNewToken as unknown as EventListener);
+    window.addEventListener('tokensLoaded', handleTokensLoaded as unknown as EventListener);
+    window.addEventListener('holdersUpdated', handleHoldersUpdated as unknown as EventListener);
+    window.addEventListener('updateHolders', handleUpdateHolders as unknown as EventListener);
 
     return () => {
-      window.removeEventListener('newTokenFound', handleNewToken as EventListener);
-      window.removeEventListener('tokensLoaded', handleTokensLoaded as EventListener);
+      window.removeEventListener('newTokenFound', handleNewToken as unknown as EventListener);
+      window.removeEventListener('tokensLoaded', handleTokensLoaded as unknown as EventListener);
+      window.removeEventListener('holdersUpdated', handleHoldersUpdated as unknown as EventListener);
+      window.removeEventListener('updateHolders', handleUpdateHolders as unknown as EventListener);
     };
   }, [network]);
 
@@ -178,6 +182,50 @@ export function useTokens(options: { autoRefresh?: boolean } = { autoRefresh: fa
       
       return updatedTokens;
     });
+  };
+
+  const handleHoldersUpdated = (event: CustomEvent<{ address: string; holders: TokenHolder[] }>) => {
+    const { address, holders } = event.detail;
+    setTokens(prevTokens => {
+      const updatedTokens = prevTokens.map(token => {
+        if (token.address.toLowerCase() === address.toLowerCase()) {
+          const updatedToken = {
+            ...token,
+            analysis: {
+              ...token.analysis,
+              holders: holders
+            },
+            updatedAt: new Date()
+          };
+          return updatedToken;
+        }
+        return token;
+      });
+
+      // Guardar en localStorage
+      try {
+        localStorage.setItem('bsc_tokens', JSON.stringify(updatedTokens));
+      } catch (error) {
+        console.error('Error guardando tokens:', error);
+      }
+
+      return updatedTokens;
+    });
+  };
+
+  const handleUpdateHolders = async (event: CustomEvent<{ address: string }>) => {
+    const { address } = event.detail;
+    if (chainService) {
+      try {
+        setLoading(true);
+        await chainService.updateHolders(address);
+      } catch (error) {
+        console.error('Error actualizando holders:', error);
+        setError(error as Error);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const refreshTokens = async () => {

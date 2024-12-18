@@ -163,6 +163,18 @@ interface Holder {
   percentage: number;
 }
 
+interface MoralisHolder {
+  token_address: string;
+  address: string;
+  balance: string;
+}
+
+interface ProcessedHolder {
+  address: string;
+  balance: string;
+  percentage: number;
+}
+
 const KNOWN_LOCKERS = [
   '0x0000000000000000000000000000000000000000', // PinkSale
   // Agregar más direcciones de lockers conocidos aquí
@@ -186,6 +198,7 @@ export class BSCChainService extends BaseChainService {
   readonly chainName = 'BSC';
   readonly scanApiUrl = 'https://api.bscscan.com/api';
   readonly scanApiKey = process.env.NEXT_PUBLIC_BSCSCAN_API_KEY || '';
+  readonly moralisApiKey = process.env.NEXT_PUBLIC_MORALIS_API_KEY || '';
   private wsService: WebSocketService;
   private processedTransactions = new Set<string>();
   private client: ReturnType<typeof createPublicClient> | null = null;
@@ -680,7 +693,7 @@ export class BSCChainService extends BaseChainService {
       console.log(`[Análisis] Obteniendo datos sociales...`);
       const socialData = await this.getSocialData(address);
 
-      const tokenContract = this.getTokenContract(address);
+      const tokenContract = await this.getTokenContract(address);
       console.log(`[Análisis] Obteniendo supply y decimales...`);
       const [totalSupplyBN, decimals] = await Promise.all([
         tokenContract.totalSupply() as Promise<bigint>,
@@ -929,12 +942,8 @@ export class BSCChainService extends BaseChainService {
     return this.retryWithBackoff(async () => {
       try {
         const client = this.createClient();
-        console.log(`[Liquidez] Buscando par para el token:`, address);
         
-        // Verificar si el token se puede tradear
-        const canTrade = await this.isTokenTradeable(address);
-        console.log(`[Liquidez] ¿Se puede tradear?:`, canTrade);
-        
+        // Primero verificamos si existe el par en PancakeSwap
         const pairResult = await client.readContract({
           address: ADDRESSES.PANCAKE_FACTORY as `0x${string}`,
           abi: FACTORY_ABI,
@@ -1009,7 +1018,7 @@ export class BSCChainService extends BaseChainService {
   }> {
     try {
       const client = this.createClient();
-
+      
       // Primero verificamos si existe el par en PancakeSwap
       const pairResult = await client.readContract({
         address: ADDRESSES.PANCAKE_FACTORY as `0x${string}`,
@@ -1101,55 +1110,139 @@ export class BSCChainService extends BaseChainService {
     return this.retryWithBackoff(async () => {
       try {
         console.log(`[Holders] Obteniendo holders para ${address}`);
-        const response = await axios.get(this.scanApiUrl, {
+        const formattedAddress = address.toLowerCase();
+        const response = await axios.get(`https://deep-index.moralis.io/api/v2.2/erc20/${formattedAddress}/owners`, {
           params: {
-            module: 'token',
-            action: 'tokenholderlist',
-            contractaddress: address,
-            page: 1,
-            offset: 100,
-            apikey: this.scanApiKey
+            chain: 'bsc',
+            limit: 100
+          },
+          headers: {
+            'accept': 'application/json',
+            'X-API-Key': this.moralisApiKey
           }
         });
 
-        console.log(`[Holders] Respuesta de la API:`, response.data);
+        console.log(`[Holders] Respuesta de Moralis:`, {
+          status: response.status,
+          statusText: response.statusText,
+          data: response.data,
+          firstHolder: response.data?.[0],
+          dataType: typeof response.data,
+          isArray: Array.isArray(response.data),
+          dataLength: response.data?.length
+        });
 
-        if (response.data.status === '1' && Array.isArray(response.data.result)) {
-          const tokenContract = this.getTokenContract(address);
+        if (response.data?.result) {
+          const holders = response.data.result;
+          console.log('[Holders] Usando result de la respuesta:', holders);
+          const tokenContract = await this.getTokenContract(address);
           const [totalSupplyBN, decimals] = await Promise.all([
             tokenContract.totalSupply() as Promise<bigint>,
             tokenContract.decimals() as Promise<number>
           ]);
-          
-          const totalSupply = BigInt(totalSupplyBN.toString());
-          const holders = response.data.result
-            .filter((holder: any) => 
-              holder.address.toLowerCase() !== ADDRESSES.DEAD_WALLET.toLowerCase() &&
-              holder.address.toLowerCase() !== ADDRESSES.BURN_WALLET.toLowerCase() &&
-              holder.address.toLowerCase() !== ADDRESSES.ZERO_ADDRESS.toLowerCase()
-            )
-            .map((holder: any) => {
-              const balance = BigInt(holder.TokenHolderQuantity);
-              const percentage = Number((balance * BigInt(10000) / totalSupply)) / 100;
-              
-              return {
-                address: holder.TokenHolderAddress,
-                balance: holder.TokenHolderQuantity,
-                percentage
-              };
+
+          const totalSupply = Number(totalSupplyBN.toString()) / Math.pow(10, decimals);
+
+          const processedHolders = holders.map((holder: any) => {
+            console.log('[Holders] Holder original:', holder);
+            const holderAddress = holder.owner_address || holder.address;
+            const balance = holder.balance || holder.token_balance || '0';
+            const percentage = (Number(balance) / Math.pow(10, decimals) / totalSupply) * 100;
+
+            const processedHolder = {
+              address: holderAddress,
+              balance,
+              percentage
+            };
+
+            console.log('[Holders] Holder procesado:', processedHolder);
+            return processedHolder;
+          });
+
+          // Ordenar por balance
+          const sortedHolders = processedHolders
+            .filter((holder: { address: string; balance: string; percentage: number }) => holder.address && holder.address !== 'Dirección Desconocida')
+            .sort((a: { balance: string }, b: { balance: string }) => {
+              try {
+                return Number(BigInt(b.balance) - BigInt(a.balance));
+              } catch (error) {
+                console.error('[Holders] Error ordenando:', error);
+                return 0;
+              }
             });
 
-          console.log(`[Holders] Holders procesados:`, holders.length);
-          return holders;
+          console.log('[Holders] Holders procesados final:', sortedHolders);
+
+          // Emitir evento de actualización
+          const updateEvent = new CustomEvent('holdersUpdated', {
+            detail: { 
+              address,
+              holders: sortedHolders 
+            }
+          });
+          window.dispatchEvent(updateEvent);
+
+          return sortedHolders;
+        } else if (Array.isArray(response.data)) {
+          const holders = response.data;
+          console.log('[Holders] Usando array de la respuesta:', holders);
+          const tokenContract = await this.getTokenContract(address);
+          const [totalSupplyBN, decimals] = await Promise.all([
+            tokenContract.totalSupply() as Promise<bigint>,
+            tokenContract.decimals() as Promise<number>
+          ]);
+
+          const totalSupply = Number(totalSupplyBN.toString()) / Math.pow(10, decimals);
+
+          const processedHolders = holders.map((holder: any) => {
+            console.log('[Holders] Holder original:', holder);
+            const holderAddress = holder.owner_address || holder.address;
+            const balance = holder.balance || holder.token_balance || '0';
+            const percentage = (Number(balance) / Math.pow(10, decimals) / totalSupply) * 100;
+
+            const processedHolder = {
+              address: holderAddress,
+              balance,
+              percentage
+            };
+
+            console.log('[Holders] Holder procesado:', processedHolder);
+            return processedHolder;
+          });
+
+          // Ordenar por balance
+          const sortedHolders = processedHolders
+            .filter((holder: { address: string; balance: string; percentage: number }) => holder.address && holder.address !== 'Dirección Desconocida')
+            .sort((a: { balance: string }, b: { balance: string }) => {
+              try {
+                return Number(BigInt(b.balance) - BigInt(a.balance));
+              } catch (error) {
+                console.error('[Holders] Error ordenando:', error);
+                return 0;
+              }
+            });
+
+          console.log('[Holders] Holders procesados final:', sortedHolders);
+
+          // Emitir evento de actualización
+          const updateEvent = new CustomEvent('holdersUpdated', {
+            detail: { 
+              address,
+              holders: sortedHolders 
+            }
+          });
+          window.dispatchEvent(updateEvent);
+
+          return sortedHolders;
         }
-        
-        console.log(`[Holders] No se encontraron holders válidos`);
+
+        console.log('[Holders] No se encontraron holders en la respuesta');
         return [];
       } catch (error) {
         console.error('[Holders] Error obteniendo holders:', error);
         return [];
       }
-    }, 5);
+    });
   }
 
   public getTokenContract(address: string) {
@@ -1157,6 +1250,7 @@ export class BSCChainService extends BaseChainService {
     if (!client) {
       throw new Error('No se pudo crear el cliente RPC')
     }
+
     return {
       name: async () => client.readContract({
         address: address as `0x${string}`,
@@ -1404,5 +1498,18 @@ export class BSCChainService extends BaseChainService {
 
   public async fetchTokenData(address: string): Promise<Partial<TokenBase>> {
     return this.getTokenData(address);
+  }
+
+  public async updateHolders(address: string) {
+    console.log('[BSCChain] Actualizando holders para:', address);
+    const holders = await this.getHolders(address);
+    const updateEvent = new CustomEvent('holdersUpdated', {
+      detail: { 
+        address,
+        holders 
+      }
+    });
+    window.dispatchEvent(updateEvent);
+    return holders;
   }
 }
