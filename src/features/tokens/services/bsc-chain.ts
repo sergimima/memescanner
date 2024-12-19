@@ -212,6 +212,21 @@ export class BSCChainService extends BaseChainService {
   private analysisCache: Record<string, { timestamp: number; data: TokenAnalysis }> = {};
   private readonly CACHE_DURATION = 5 * 60 * 1000;
 
+  // Lista de tokens establecidos que queremos excluir
+  private readonly ESTABLISHED_TOKENS = new Set([
+    '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', // CAKE
+    '0x7083609fce4d1d8dc0c979aab8c869ea2c873402', // DOT
+    '0x7950865a9140cb519342433146ed5b40c6f210f7', // BAND
+    '0x3ee2200efb3400fabb9aacf31297cbdd1d435d47', // ADA
+    '0xba2ae424d960c26247dd6c32edc70b295c744c43', // DOGE
+    '0x2170ed0880ac9a755fd29b2688956bd959f933f8', // ETH
+    '0x1d2f0da169ceb9fc7b3144628db156f3f6c60dbe', // XRP
+    '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', // USDC
+    '0x55d398326f99059ff775485246999027b3197955', // USDT
+    '0xe9e7cea3dedca5984780bafc599bd69add087d56', // BUSD
+    '0x1af3f329e8be154074d8769d1ffa4ee058b1dbc3', // DAI
+  ].map(address => address.toLowerCase()));
+
   private constructor() {
     super();
     this.processedTransactions = new Set();
@@ -235,6 +250,12 @@ export class BSCChainService extends BaseChainService {
       this.tokens = tokens;
     }).catch(error => {
       console.error('Error cargando tokens guardados:', error);
+    });
+
+    // Configurar manejo de eventos del WebSocket
+    window.addEventListener('newPairEvent', async (event: Event) => {
+      const customEvent = event as CustomEvent<{ data: BSCScanEvent }>;
+      await this.processNewPairs([customEvent.detail.data], 'websocket');
     });
   }
 
@@ -263,35 +284,29 @@ export class BSCChainService extends BaseChainService {
     return savedTokens;
   }
 
-  private async saveToken(token: TokenBase) {
-    try {
-      const tokens = await this.loadSavedTokens();
-      const existingTokenIndex = tokens.findIndex(
-        (t: TokenBase) => t.address.toLowerCase() === token.address.toLowerCase()
-      );
+  private saveToken(token: TokenBase) {
+    if (!this.isValidToken(token)) {
+      console.error('Token inválido:', token);
+      return;
+    }
 
-      if (existingTokenIndex !== -1) {
-        // Si el token ya existe, actualizar
-        tokens[existingTokenIndex] = {
-          ...tokens[existingTokenIndex],
-          ...token,
-          updatedAt: new Date()
-        } as TokenBase;
-      } else {
-        // Si es un nuevo token, añadir al principio
-        tokens.unshift(token);
-      }
+    // Verificar si el token ya existe
+    const existingTokens = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
+    const exists = existingTokens.some((t: TokenBase) => 
+      t.address.toLowerCase() === token.address.toLowerCase()
+    );
 
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(tokens));
-      console.log(`Token ${existingTokenIndex === -1 ? 'guardado' : 'actualizado'}:`, token.address);
+    if (!exists) {
+      // Agregar el nuevo token
+      existingTokens.push(token);
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(existingTokens));
+      console.log('Token guardado:', token.address);
 
-      // Emitir evento para actualizar la UI
-      const loadedTokensEvent = new CustomEvent('tokensLoaded', {
-        detail: { tokens }
+      // Disparar evento de nuevo token
+      const event = new CustomEvent('newTokenFound', {
+        detail: { token }
       });
-      window.dispatchEvent(loadedTokensEvent);
-    } catch (error) {
-      console.error(`Error guardando token:`, error);
+      window.dispatchEvent(event);
     }
   }
 
@@ -389,230 +404,167 @@ export class BSCChainService extends BaseChainService {
   }
 
   async getNewTokens(): Promise<TokenBase[]> {
-    // Temporalmente deshabilitado para probar WebSocket
-    console.log('[POLLING] Método deshabilitado temporalmente para pruebas de WebSocket');
-    return [];
-    
-    /* try {
-      const events = await this.getLatestTokenEvents()
-      console.log(`Encontrados ${events.length} eventos de nuevos tokens`)
+    try {
+      const events = await this.getLatestTokenEvents();
+      const newTokens: TokenBase[] = [];
 
-      // Extraer las direcciones de los tokens de los eventos
-      const addresses = events.flatMap(event => {
-        const token0 = '0x' + event.topics[1].slice(26)
-        const token1 = '0x' + event.topics[2].slice(26)
-        return [token0, token1]
-      }).filter(address => 
-        address.toLowerCase() !== ADDRESSES.WBNB.toLowerCase() &&
-        address.toLowerCase() !== ADDRESSES.PANCAKE_FACTORY.toLowerCase()
-      )
-
-      const uniqueAddresses = [...new Set(addresses)]
-      console.log(`Procesando ${uniqueAddresses.length} direcciones únicas`)
-
-      const tokens: TokenBase[] = []
-      const batchSize = 3 // Procesar tokens en lotes pequeños
-      
-      for (let i = 0; i < uniqueAddresses.length; i += batchSize) {
-        const batch = uniqueAddresses.slice(i, i + batchSize)
-        const batchPromises = batch.map(async (address: string) => {
-          try {
-            const tokenData = await this.getTokenData(address)
-            if (!this.isValidToken(tokenData)) {
-              console.warn(`Token incompleto en ${address}: name=${tokenData.name}, symbol=${tokenData.symbol}, decimals=${tokenData.decimals}, totalSupply=${tokenData.totalSupply}`)
-              return null
-            }
-
-            const analysis = await this.analyzeToken(address)
-            const score = this.calculateScore(analysis)
-
-            return {
-              ...tokenData,
-              network: this.chainName,
-              createdAt: new Date(),
-              score,
-              analysis
-            }
-          } catch (error) {
-            console.error(`Error procesando token ${address}:`, error)
-            return null
+      for (const event of events) {
+        try {
+          // Ignorar tokens establecidos
+          if (this.ESTABLISHED_TOKENS.has(event.address.toLowerCase())) {
+            console.log(`[Tokens] Ignorando token establecido ${event.address}`);
+            continue;
           }
-        })
 
-        const batchResults = await Promise.all(batchPromises)
-        const validTokens = batchResults.filter((token): token is TokenBase => token !== null)
-        tokens.push(...validTokens)
+          const tokenData = await this.getTokenData(event.address);
+          if (!this.isValidToken(tokenData)) {
+            console.warn(`Token incompleto en ${event.address}: name=${tokenData.name}, symbol=${tokenData.symbol}, decimals=${tokenData.decimals}, totalSupply=${tokenData.totalSupply}`);
+            continue;
+          }
 
-        if (i + batchSize < uniqueAddresses.length) {
-          await this.delay(2000) // Esperar 2 segundos entre lotes
+          // Verificar si el token es tradeable
+          const isTradeable = await this.isTokenTradeable(event.address);
+          if (!isTradeable) {
+            console.log(`[Tokens] Token ${event.address} no es tradeable, ignorando`);
+            continue;
+          }
+
+          const analysis = await this.analyzeToken(event.address);
+          const score = this.calculateScore(analysis);
+
+          newTokens.push({
+            ...tokenData,
+            network: this.chainName,
+            createdAt: new Date(Number(event.timeStamp) * 1000),
+            score,
+            analysis
+          } as TokenBase);
+
+        } catch (error) {
+          console.error(`[Tokens] Error procesando token ${event.address}:`, error);
+          continue;
         }
       }
 
-      return tokens
+      return newTokens;
+
     } catch (error) {
-      console.error('Error getting new tokens:', error)
-      return []
-    } */
+      console.error('[Tokens] Error obteniendo nuevos tokens:', error);
+      return [];
+    }
+  }
+
+  private cleanAddress(address: string): string {
+    // Si la dirección tiene los 24 ceros en medio (formato de topic), la limpiamos
+    if (address.length === 66) {
+      return '0x' + address.slice(26).toLowerCase();
+    }
+    // Si no, solo aseguramos que esté en minúsculas
+    return address.toLowerCase();
   }
 
   private async getTokenData(address: string): Promise<Partial<TokenBase>> {
-    const cacheKey = `token_data_${address.toLowerCase()}`;
-    const cachedData = localStorage.getItem(cacheKey);
-    
-    if (cachedData) {
-      const parsed = JSON.parse(cachedData);
-      const cacheAge = Date.now() - parsed.timestamp;
-      if (cacheAge < 5 * 60 * 1000) {
-        return parsed.data;
-      }
-    }
+    const cleanedAddress = this.cleanAddress(address);
+    console.log(`[getTokenData] Obteniendo datos para token ${cleanedAddress}`);
 
     try {
       const client = this.createClient();
+      const results = await client.multicall({
+        contracts: [
+          {
+            address: cleanedAddress as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'name',
+          },
+          {
+            address: cleanedAddress as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'symbol',
+          },
+          {
+            address: cleanedAddress as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'decimals',
+          },
+          {
+            address: cleanedAddress as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'totalSupply',
+          },
+        ],
+      });
 
-      // Intentar primero con multicall
+      // Verificar si todos los resultados son exitosos
+      const [nameResult, symbolResult, decimalsResult, totalSupplyResult] = results;
+      
+      if (nameResult.status === 'success' && 
+          symbolResult.status === 'success' && 
+          decimalsResult.status === 'success' && 
+          totalSupplyResult.status === 'success') {
+        
+        const tokenData: Partial<TokenBase> = {
+          address: cleanedAddress,
+          name: nameResult.result as string,
+          symbol: symbolResult.result as string,
+          decimals: decimalsResult.result as number,
+          totalSupply: (totalSupplyResult.result as bigint).toString(),
+          network: this.chainName,
+          createdAt: new Date()
+        };
+
+        return tokenData;
+      }
+
+      throw new Error('Multicall incompleto');
+    } catch (multicallError) {
+      console.log(`[getTokenData] Multicall falló para ${cleanedAddress}, intentando llamadas individuales`);
+      
       try {
-        const calls = [
-          {
-            target: address as `0x${string}`,
-            callData: encodeFunctionData({
-              abi: ERC20_ABI,
-              functionName: 'name',
-              args: [] as const
-            })
-          },
-          {
-            target: address as `0x${string}`,
-            callData: encodeFunctionData({
-              abi: ERC20_ABI,
-              functionName: 'symbol',
-              args: [] as const
-            })
-          },
-          {
-            target: address as `0x${string}`,
-            callData: encodeFunctionData({
-              abi: ERC20_ABI,
-              functionName: 'decimals',
-              args: [] as const
-            })
-          },
-          {
-            target: address as `0x${string}`,
-            callData: encodeFunctionData({
-              abi: ERC20_ABI,
-              functionName: 'totalSupply',
-              args: [] as const
-            })
-          }
-        ];
+        const client = this.createClient();
+        const [name, symbol, decimals, totalSupply] = await Promise.all([
+          client.readContract({
+            address: cleanedAddress as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'name',
+          }).catch(() => null) as Promise<string | null>,
+          client.readContract({
+            address: cleanedAddress as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'symbol',
+          }).catch(() => null) as Promise<string | null>,
+          client.readContract({
+            address: cleanedAddress as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'decimals',
+          }).catch(() => null) as Promise<number | null>,
+          client.readContract({
+            address: cleanedAddress as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'totalSupply',
+          }).catch(() => null) as Promise<bigint | null>
+        ]);
 
-        const multicallResult = await client.readContract({
-          address: ADDRESSES.MULTICALL3 as `0x${string}`,
-          abi: MULTICALL3_ABI,
-          functionName: 'aggregate',
-          args: [calls]
-        }) as MulticallResult;
-
-        if (multicallResult?.returnData && Array.isArray(multicallResult.returnData) && multicallResult.returnData.length === 4) {
-          const decodedResults = {
-            name: decodeFunctionResult({
-              abi: ERC20_ABI,
-              functionName: 'name',
-              data: multicallResult.returnData[0]
-            }) as string,
-            symbol: decodeFunctionResult({
-              abi: ERC20_ABI,
-              functionName: 'symbol',
-              data: multicallResult.returnData[1]
-            }) as string,
-            decimals: decodeFunctionResult({
-              abi: ERC20_ABI,
-              functionName: 'decimals',
-              data: multicallResult.returnData[2]
-            }) as number,
-            totalSupply: decodeFunctionResult({
-              abi: ERC20_ABI,
-              functionName: 'totalSupply',
-              data: multicallResult.returnData[3]
-            }) as bigint
+        if (name && symbol && typeof decimals === 'number') {
+          const tokenData: Partial<TokenBase> = {
+            address: cleanedAddress,
+            name: name as string,
+            symbol: symbol as string,
+            decimals,
+            totalSupply: totalSupply ? totalSupply.toString() : '0',
+            network: this.chainName,
+            createdAt: new Date()
           };
 
-          if (decodedResults.name && decodedResults.symbol && typeof decodedResults.decimals === 'number') {
-            const tokenData: Partial<TokenBase> = {
-              address,
-              name: decodedResults.name as string,
-              symbol: decodedResults.symbol as string,
-              decimals: decodedResults.decimals,
-              totalSupply: decodedResults.totalSupply.toString(),
-              network: this.chainName,
-              createdAt: new Date()
-            };
-
-            localStorage.setItem(cacheKey, JSON.stringify({
-              data: tokenData,
-              timestamp: Date.now()
-            }));
-
-            return tokenData;
-          }
+          return tokenData;
         }
-        throw new Error('Multicall incompleto');
-      } catch (multicallError) {
-        console.log(`[getTokenData] Multicall falló para ${address}, intentando llamadas individuales`);
-        
-        // Si multicall falla, intentar llamadas individuales
-        try {
-          const [name, symbol, decimals, totalSupply] = await Promise.all([
-            client.readContract({
-              address: address as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'name',
-            }).catch(() => null) as Promise<string | null>,
-            client.readContract({
-              address: address as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'symbol',
-            }).catch(() => null) as Promise<string | null>,
-            client.readContract({
-              address: address as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'decimals',
-            }).catch(() => null) as Promise<number | null>,
-            client.readContract({
-              address: address as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'totalSupply',
-            }).catch(() => null) as Promise<bigint | null>
-          ]);
-
-          if (name && symbol && typeof decimals === 'number') {
-            const tokenData: Partial<TokenBase> = {
-              address,
-              name: name as string,
-              symbol: symbol as string,
-              decimals,
-              totalSupply: totalSupply ? totalSupply.toString() : '0',
-              network: this.chainName,
-              createdAt: new Date()
-            };
-
-            localStorage.setItem(cacheKey, JSON.stringify({
-              data: tokenData,
-              timestamp: Date.now()
-            }));
-
-            return tokenData;
-          }
-        } catch (individualError) {
-          console.error(`[getTokenData] Error en llamadas individuales para ${address}:`, individualError);
-        }
+      } catch (individualError) {
+        console.error(`[getTokenData] Error en llamadas individuales para ${cleanedAddress}:`, individualError);
       }
-    } catch (error) {
-      console.error(`[getTokenData] Error general obteniendo datos del token ${address}:`, error);
     }
 
-    return { address };
+    return {
+      address: cleanedAddress
+    };
   }
 
   public calculateScore(analysis: TokenAnalysis): TokenScore {
@@ -844,57 +796,21 @@ export class BSCChainService extends BaseChainService {
     try {
       const client = this.createClient();
       
-      // Primero verificamos si existe el par en PancakeSwap
-      const pairCall = {
-        target: ADDRESSES.PANCAKE_FACTORY as `0x${string}`,
-        callData: encodeFunctionData({
-          abi: FACTORY_ABI,
-          functionName: 'getPair',
-          args: [address as `0x${string}`, ADDRESSES.WBNB as `0x${string}`]
-        }) as `0x${string}`
-      };
-
+      // Asegurarnos de que la dirección tenga el formato correcto
+      const formattedAddress = address.toLowerCase().slice(0, 42);
+      const formattedWBNB = ADDRESSES.WBNB.toLowerCase().slice(0, 42);
+      
+      // Solo verificamos si existe el par en PancakeSwap
       const pairResult = await client.readContract({
         address: ADDRESSES.PANCAKE_FACTORY as `0x${string}`,
         abi: FACTORY_ABI,
         functionName: 'getPair',
-        args: [address as `0x${string}`, ADDRESSES.WBNB as `0x${string}`]
+        args: [formattedAddress as `0x${string}`, formattedWBNB as `0x${string}`]
       }) as `0x${string}`;
 
-      if (!pairResult || pairResult === ADDRESSES.ZERO_ADDRESS) {
-        return false;
-      }
-
-      // Verificar si la liquidez está bloqueada
-      const liquidityLockInfo = await this.isLiquidityLocked(pairResult);
-      console.log(`[Liquidez] Info de liquidez bloqueada:`, liquidityLockInfo);
-      
-      const reserves = await client.readContract({
-        address: pairResult,
-        abi: PAIR_ABI,
-        functionName: 'getReserves',
-        args: [] as readonly []
-      }) as [bigint, bigint, number];
-
-      const token0Address = await client.readContract({
-        address: pairResult,
-        abi: PAIR_ABI,
-        functionName: 'token0',
-        args: [] as readonly []
-      }) as `0x${string}`;
-
-      if (!reserves || !token0Address) {
-        return false;
-      }
-
-      const bnbPriceResponse = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT');
-      const bnbPrice = parseFloat(bnbPriceResponse.data.price);
-
-      const liquidityBNB = reserves[1].toString();
-      const liquidityUSD = (Number(liquidityBNB) / 1e18) * bnbPrice;
-
-      return true;
-    } catch {
+      return pairResult !== ADDRESSES.ZERO_ADDRESS;
+    } catch (error) {
+      console.error('[isTokenTradeable] Error:', error);
       return false;
     }
   }
@@ -1256,25 +1172,21 @@ export class BSCChainService extends BaseChainService {
         address: address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'name',
-        args: [] as readonly []
       }),
       symbol: async () => client.readContract({
         address: address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'symbol',
-        args: [] as readonly []
       }),
       decimals: async () => client.readContract({
         address: address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'decimals',
-        args: [] as readonly []
       }),
       totalSupply: async () => client.readContract({
         address: address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'totalSupply',
-        args: [] as readonly []
       })
     }
   }
@@ -1404,9 +1316,9 @@ export class BSCChainService extends BaseChainService {
   async processNewPairs(logs: BSCScanEvent[], source: 'websocket' | 'polling' = 'polling') {
     for (const log of logs) {
       try {
-        const token0 = '0x' + log.topics[1].slice(26).toLowerCase();
-        const token1 = '0x' + log.topics[2].slice(26).toLowerCase();
-        const pairAddress = '0x' + log.data.slice(26).toLowerCase();
+        const token0 = this.cleanAddress(log.topics[1]);
+        const token1 = this.cleanAddress(log.topics[2]);
+        const pairAddress = this.cleanAddress(log.data.slice(0, 66));
 
         // Ignorar si alguna dirección es inválida
         if (!token0 || !token1 || !pairAddress) {
@@ -1425,6 +1337,12 @@ export class BSCChainService extends BaseChainService {
         // Identificar el token (el que no es WBNB)
         const tokenAddress = token0.toLowerCase() === ADDRESSES.WBNB.toLowerCase() ? token1 : token0;
 
+        // Verificar si el token es establecido
+        if (this.ESTABLISHED_TOKENS.has(tokenAddress.toLowerCase())) {
+          console.log(`[${this.formatTime(new Date())}] Token ${tokenAddress} es un token establecido, ignorando`);
+          continue;
+        }
+
         // Verificar si el token es tradeable antes de continuar
         const isTradeable = await this.isTokenTradeable(tokenAddress);
         if (!isTradeable) {
@@ -1441,39 +1359,33 @@ export class BSCChainService extends BaseChainService {
 
         // Obtener datos básicos del token
         const tokenData = await this.getTokenData(tokenAddress);
-        if (!tokenData.address || !tokenData.name || !tokenData.symbol || 
-            tokenData.decimals === undefined || !tokenData.totalSupply) {
-          console.warn(`Token incompleto, ignorando:`, tokenData);
+        if (!this.isValidToken(tokenData)) {
+          console.warn(`Token incompleto en ${tokenAddress}:`, tokenData);
           continue;
         }
 
-        // Analizar el token
+        // Obtener análisis inicial
         const analysis = await this.analyzeToken(tokenAddress);
         const score = this.calculateScore(analysis);
 
+        // Crear objeto de token completo
         const token: TokenBase = {
-          address: tokenData.address,
-          name: tokenData.name,
-          symbol: tokenData.symbol,
-          decimals: tokenData.decimals,
-          totalSupply: tokenData.totalSupply,
+          ...tokenData as Required<Pick<TokenBase, 'address' | 'name' | 'symbol' | 'decimals' | 'totalSupply'>>,
           network: this.chainName,
-          createdAt: new Date(),
-          analysis,
-          score
+          createdAt: new Date(Number(log.timeStamp) * 1000),
+          score,
+          analysis
         };
 
-        // Guardar el token
+        // Guardar token y emitir evento
         await this.saveToken(token);
-
-        // Emitir evento de nuevo token
         const newTokenEvent = new CustomEvent('newToken', {
           detail: { token }
         });
         window.dispatchEvent(newTokenEvent);
 
       } catch (error) {
-        console.error('Error procesando nuevo par:', error);
+        console.error(`[${this.formatTime(new Date())}] Error procesando par:`, error);
       }
     }
   }

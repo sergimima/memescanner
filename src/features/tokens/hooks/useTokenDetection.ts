@@ -57,12 +57,31 @@ export function useTokenDetection({ autoRefresh = false }: UseTokenDetectionProp
       setLoading(true)
       setError(null)
       const newTokens = await chainService.getNewTokens()
-      setTokens(prevTokens => {
-        // Filtrar tokens duplicados por dirección
-        const addresses = new Set(prevTokens.map(t => t.address.toLowerCase()))
-        const uniqueNewTokens = newTokens.filter(t => !addresses.has(t.address.toLowerCase()))
-        return [...uniqueNewTokens, ...prevTokens]
-      })
+      
+      // Crear un Map para mantener solo la última versión de cada token
+      const tokenMap = new Map(
+        tokens.map(token => [token.address.toLowerCase(), token])
+      );
+
+      // Actualizar o añadir nuevos tokens
+      newTokens.forEach(token => {
+        const address = token.address.toLowerCase();
+        if (!tokenMap.has(address)) {
+          tokenMap.set(address, token);
+        }
+      });
+
+      // Convertir el Map de vuelta a un array
+      const updatedTokens = Array.from(tokenMap.values());
+      
+      // Ordenar por fecha de creación, más recientes primero
+      updatedTokens.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      setTokens(updatedTokens)
     } catch (err) {
       setError(err as Error)
       console.error('Error detecting new tokens:', err)
@@ -76,21 +95,31 @@ export function useTokenDetection({ autoRefresh = false }: UseTokenDetectionProp
       const customEvent = event as CustomEvent<{ token: TokenBase }>;
       console.log(`[${new Date().toLocaleTimeString()}] Nuevo token detectado:`, customEvent.detail.token);
       
-      // Añadir el token a la lista
       setTokens(prevTokens => {
-        // Verificar si el token ya existe
-        if (prevTokens.some(t => t.address.toLowerCase() === customEvent.detail.token.address.toLowerCase())) {
-          return prevTokens;
-        }
-        // Añadir el nuevo token al principio del array
-        const newTokens = [customEvent.detail.token, ...prevTokens];
+        // Crear un Map con los tokens existentes
+        const tokenMap = new Map(
+          prevTokens.map(token => [token.address.toLowerCase(), token])
+        );
+
+        // Añadir o actualizar el nuevo token
+        const newToken = customEvent.detail.token;
+        tokenMap.set(newToken.address.toLowerCase(), newToken);
+
+        // Convertir el Map de vuelta a un array y ordenar
+        const updatedTokens = Array.from(tokenMap.values()).sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return dateB - dateA;
+        });
+
         // Guardar en localStorage
         try {
-          localStorage.setItem('bsc_tokens', JSON.stringify(newTokens));  // Usar la misma clave que BSCChainService
+          localStorage.setItem('bsc_tokens', JSON.stringify(updatedTokens));
         } catch (error) {
           console.error(`[${new Date().toLocaleTimeString()}] Error guardando tokens:`, error);
         }
-        return newTokens;
+
+        return updatedTokens;
       });
       
       // Iniciar análisis automático

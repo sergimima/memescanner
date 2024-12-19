@@ -76,479 +76,222 @@ MemeScanner es una plataforma web moderna diseñada para detectar y analizar nue
   - >1000 social followers: 10 puntos
   - Engagement orgánico: 10 puntos
 
-## 🎨 Estilos y CSS
+## 🎨 Interfaz de Usuario y Desarrollo Frontend
 
-#### Stack Principal
-- **TailwindCSS**: Utilidades CSS
-- **shadcn/ui**: Componentes base
+### Stack Principal
+- **Next.js 14**: Framework base (requiere Node.js 18.17 o superior)
+- **TailwindCSS**: Sistema de estilos y utilidades CSS
+- **shadcn/ui**: Componentes base con Radix UI
 - **CSS Modules**: Estilos específicos por componente
-- **CSS Variables**: Tematización
+- **CSS Variables**: Sistema de tematización
 
-#### Configuración Tailwind
-```javascript
-// tailwind.config.js
-module.exports = {
-  darkMode: ["class"],
-  content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
-  ],
-  theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
-    },
-    extend: {
-      colors: {
-        border: "var(--border)",
-        input: "var(--input)",
-        ring: "var(--ring)",
-        background: "var(--background)",
-        foreground: "var(--foreground)",
-        primary: {
-          DEFAULT: "var(--primary)",
-          foreground: "var(--primary-foreground)",
-        },
-        secondary: {
-          DEFAULT: "var(--secondary)",
-          foreground: "var(--secondary-foreground)",
-        },
-        destructive: {
-          DEFAULT: "var(--destructive)",
-          foreground: "var(--destructive-foreground)",
-        },
-        muted: {
-          DEFAULT: "var(--muted)",
-          foreground: "var(--muted-foreground)",
-        },
-        accent: {
-          DEFAULT: "var(--accent)",
-          foreground: "var(--accent-foreground)",
-        },
-        popover: {
-          DEFAULT: "var(--popover)",
-          foreground: "var(--popover-foreground)",
-        },
-        card: {
-          DEFAULT: "var(--card)",
-          foreground: "var(--card-foreground)",
-        },
-      },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
-      },
-      keyframes: {
-        "accordion-down": {
-          from: { height: 0 },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: 0 },
-        },
-      },
-      animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
-      },
-    },
-  },
-  plugins: [require("tailwindcss-animate")],
-}
+### Componentes y Estructura
+- **Componentes Base**: Implementación de shadcn/ui
+  - Dialog
+  - DropdownMenu
+  - Tabs
+  - Card
+  - Button
+  - Input
+  - Select
+  - Toast
+  - Tooltip
+
+- **Estructura de Componentes**:
+  ```
+  src/
+   ├── app/                    # App Router (Next.js 14)
+   │   ├── (auth)/            # Rutas protegidas
+   │   ├── (public)/          # Rutas públicas
+   │   ├── api/               # API Routes
+   │   └── layout.tsx         # Root layout
+   │
+   ├── components/            # Componentes React
+   │   ├── ui/               # Componentes base (shadcn)
+   │   ├── icons/          # Iconos del sistema
+   │   ├── layout/         # Componentes de layout
+   │   ├── providers/      # Providers de React
+   │   ├── token/          # Componentes específicos de tokens
+   │   ├── wallet/         # Componentes de wallet
+   │   ├── error-boundary.tsx
+   │   ├── network-selector.tsx
+   │   ├── theme-provider.tsx
+   │   ├── theme-toggle.tsx
+   │   ├── token-updates.tsx
+   │   └── websocket-status.tsx
+   │
+   ├── config/              # Configuraciones
+   │   └── ...            # Archivos de configuración
+   │
+   ├── features/           # Lógica de negocio principal
+   │   ├── network/       # Gestión de redes blockchain
+   │   └── tokens/        # Gestión de tokens y lógica relacionada
+   │
+   ├── lib/               # Utilidades y helpers
+   │   └── ...          # Funciones utilitarias
+   │
+   ├── types/             # Definiciones de TypeScript
+   │   └── ...          # Tipos y interfaces
+   │
+   └── utils/             # Utilidades generales
+       └── ...          # Funciones de utilidad
+
 ```
 
-#### Variables CSS Globales
-```css
-/* globals.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
- 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
-  }
- 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
-  }
-}
+### Performance y Optimización
+- **Lazy Loading**: Carga diferida de componentes pesados
+- **Image Optimization**: Next/Image para optimización automática
+- **Bundle Size**: Monitoreo y optimización del tamaño del bundle
+- **Code Splitting**: División automática del código por rutas
 
-@layer utilities {
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
-  
-  .custom-scroll {
-    @apply scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700;
-  }
-}
-```
-
-#### Componentes shadcn/ui
-```typescript
-// Ejemplo de Button personalizado
-const Button = React.forwardRef<
-  HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement>
->(({ className, ...props }, ref) => {
-  return (
-    <button
-      className={cn(
-        "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        "disabled:opacity-50 disabled:pointer-events-none",
-        "bg-primary text-primary-foreground hover:bg-primary/90",
-        className
-      )}
-      ref={ref}
-      {...props}
-    />
-  )
-})
-```
-
-#### Utilidades CSS Personalizadas
-```typescript
-// utils/styles.ts
-export const styles = {
-  gradients: {
-    primary: 'bg-gradient-to-r from-primary to-secondary',
-    accent: 'bg-gradient-to-r from-accent to-primary',
-  },
-  animations: {
-    fadeIn: 'animate-fadeIn',
-    slideIn: 'animate-slideIn',
-  },
-  layout: {
-    container: 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8',
-    section: 'py-12 sm:py-16 lg:py-20',
-  },
-}
-```
-
-#### Responsive Design Utilities
-```css
-/* Breakpoints personalizados */
-@custom-media --mobile (max-width: 640px);
-@custom-media --tablet (min-width: 641px) and (max-width: 1024px);
-@custom-media --desktop (min-width: 1025px);
-
-/* Ejemplo de uso */
-@media (--mobile) {
-  .container {
-    padding: 1rem;
-  }
-}
-```
-
-## 🎨 Interfaz de Usuario
-
-### Componentes Principales
-- **Header**
-  - Selector de red (Ethereum, BSC, etc.)
-  - Selector tema claro/oscuro
-  - Conectar wallet
-  - Menú de navegación
-
-- **Dashboard Principal**
-  ```
-  ┌─────────────────────────────────────────────┐
-  │ 📊 Resumen General                          │
-  ├─────────────┬─────────────┬────────────────┤
-  │ Nuevos      │ Volumen     │ Tendencias     │
-  │ Tokens 24h  │ Total       │ Sociales       │
-  └─────────────┴─────────────┴────────────────┘
-  ```
-
-- **Lista de Tokens**
-  ```
-  ┌─────────────────────────────────────────────┐
-  │ 🔍 Filtros y Búsqueda                       │
-  ├─────────────────────────────────────────────┤
-  │ Token | Precio | Holders | Score | Acciones │
-  ├─────────────────────────────────────────────┤
-  │ [Tabla de tokens con paginación]            │
-  └─────────────┴─────────────┴────────────────┘
-  ```
-
-- **Vista Detallada de Token**
-  ```
-  ┌─────────────────────────────────────────────┐
-  │ Token Info | Holders | Social | Seguridad   │
-  ├─────────────────────────────────────────────┤
-  │ Gráficos y Métricas                         │
-  ├─────────────────────────────────────────────┤
-  │ Análisis Técnico                            │
-  └─────────────┴─────────────┴────────────────┘
-  ```
-
-### 👛 Modo de Acceso
-
-#### Sin Wallet (Modo Lectura)
-- **Funcionalidades Disponibles**:
-  - Ver lista de nuevos tokens
-  - Consultar análisis de seguridad
-  - Ver métricas y gráficos
-  - Acceder a información histórica
-  - Ver tendencias de mercado
-  - Explorar rankings de tokens
-  - Acceder a la documentación
-
-#### Con Wallet (Modo Completo)
-- **Funcionalidades Adicionales**:
-  - Guardar tokens favoritos
-  - Configurar alertas personalizadas
-  - Interactuar con contratos
-  - Realizar operaciones de trading
-  - Personalizar dashboard
-  - Guardar configuraciones
-
-#### Estado de Conexión
-```typescript
-type ConnectionState = {
-  isConnected: boolean;
-  address: string | null;
-  mode: 'read' | 'full';
-};
-
-const useWalletState = () => {
-  const [state, setState] = useState<ConnectionState>({
-    isConnected: false,
-    address: null,
-    mode: 'read'
-  });
-
-  // La app funciona por defecto en modo lectura
-  useEffect(() => {
-    setState(prev => ({
-      ...prev,
-      mode: prev.isConnected ? 'full' : 'read'
-    }));
-  }, [state.isConnected]);
-
-  return {
-    ...state,
-    isReadOnly: state.mode === 'read',
-    canInteract: state.mode === 'full'
-  };
-};
-```
-
-#### Interfaz Visual
-```
-// Sin Wallet
-┌─────────────────────────────┐
-│   🔍 Modo Lectura          │
-│   Conectar Wallet para más  │
-│   funcionalidades          │
-└─────────────────────────────┘
-
-// Con Wallet
-┌─────────────────────────────┐
-│   ✅ Modo Completo         │
-│   0x1234...5678            │
-└─────────────────────────────┘
-```
-
-#### Transición entre Modos
-- El usuario puede navegar y usar funciones básicas sin wallet
-- Al intentar usar funciones avanzadas:
-  ```typescript
-  const handleFeatureAccess = (feature: string) => {
-    if (requiresWallet(feature) && !isConnected) {
-      showConnectPrompt({
-        message: "Conecta tu wallet para acceder a esta función",
-        feature: feature,
-        onConnect: () => activateFeature(feature)
-      });
-      return;
-    }
-    activateFeature(feature);
-  };
-  ```
-
-### Características UI/UX
-- **Diseño Responsivo**
-  - Desktop: 3 columnas
-  - Tablet: 2 columnas
-  - Mobile: 1 columna
-  - Breakpoints: 
-    - Mobile: <768px
-    - Tablet: 768px-1024px
-    - Desktop: >1024px
-
-- **Temas**
-  - Claro/Oscuro automático
-  - Personalización de colores
-  - Modo alto contraste
-  - Soporte para daltonismo
-
-- **Interactividad**
-  - Gráficos interactivos con zoom
-  - Tooltips informativos
-  - Notificaciones en tiempo real
-  - Drag & drop para personalización
-
-- **Componentes Avanzados**
-  - Tablas ordenables y filtrables
-  - Gráficos de velas (TradingView)
-  - Heatmaps de actividad
-  - Indicadores técnicos
-
-### Performance UI
-- **Optimizaciones**:
-  - Lazy loading de imágenes
-  - Virtualización de listas largas
-  - Caching de datos en cliente
-  - Prefetch de rutas comunes
-
-- **Métricas Objetivo**:
-  - Tiempo de carga inicial: <2s
-  - First Contentful Paint: <1s
-  - Time to Interactive: <3s
-  - Performance Score: >90
-
-### Accesibilidad
-- WCAG 2.1 AA compliant
-- Soporte para lectores de pantalla
-- Navegación por teclado
-- Etiquetas ARIA apropiadas
-
-### Componentes shadcn/ui
-```typescript
-// Componentes principales utilizados
-import {
-  Card,
-  DataTable,
-  Dialog,
-  DropdownMenu,
-  Tabs,
-  Toast,
-  Tooltip,
-} from "@/components/ui"
-```
-
-### Sistema de Diseño
-- **Colores**:
-  ```css
-  --primary: #2563eb;
-  --secondary: #4f46e5;
-  --accent: #0ea5e9;
-  --background: #ffffff;
-  --foreground: #020617;
-  ```
-
-- **Tipografía**:
-  ```css
-  --font-sans: 'Inter', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  ```
-
-- **Espaciado**:
-  ```css
-  --spacing-1: 0.25rem;  /* 4px */
-  --spacing-2: 0.5rem;   /* 8px */
-  --spacing-3: 0.75rem;  /* 12px */
-  --spacing-4: 1rem;     /* 16px */
-  ```
-
-### Estados de Carga
+### Estados de UI
 - **Loading States**:
-  - Skeletons para datos
+  - Skeletons para datos en carga
   - Spinners para acciones
   - Progress bars para procesos
   - Placeholders para imágenes
 
-- **Error States**:
-  - Mensajes de error amigables
-  - Opciones de retry
-  - Fallbacks visuales
-  - Modo offline
+### Compatibilidad y Dependencias
+- Versiones específicas de Radix UI components
+- TailwindCSS y plugins configurados
+- Sistema de temas claro/oscuro
+- Responsive design para múltiples dispositivos
 
-### Animaciones
-- **Transiciones**:
-  - Suaves entre rutas
-  - Fade in/out de elementos
-  - Slide para drawers
-  - Scale para modales
-  - Microinteracciones (hover states)
+## 🛠 Stack Tecnológico
+- **Frontend**:
+  - Next.js 14
+  - React 18
+  - TypeScript
+- **Blockchain Integration**:
+  - Web3.js
+  - @solana/web3.js
+  - Ethers.js
 
-### Componentes Principales
-- [x] Header completo
-  - [x] Selector de red (Ethereum, BSC, etc.)
-  - [x] Selector tema claro/oscuro
-  - [x] Conectar wallet (Web3Modal v4)
-  - [ ] Menú de navegación
+- **APIs y Servicios**:
+  - Solscan/Birdeye (Solana)
+  - Etherscan
+  - BSCScan
+  - APIs de DEX relevantes
 
-### Componentes Avanzados
-- [ ] Tablas ordenables y filtrables
-- [ ] Gráficos de velas (TradingView)
-- [ ] Heatmaps de actividad
-- [ ] Indicadores técnicos
+## ⚙️ Conexiones Blockchain
 
-### Estados de Carga
-- [ ] Skeletons para datos
-- [ ] Spinners para acciones
-- [ ] Progress bars para procesos
-- [ ] Placeholders para imágenes
+### RPCs Públicos (No requieren API key)
+```env
+# Ethereum
+NEXT_PUBLIC_ETHEREUM_RPC=https://eth.llamarpc.com
 
-### Animaciones y Transiciones
-- [x] Transiciones de tema
-- [ ] Fade in/out de elementos
-- [ ] Slide para drawers
-- [ ] Scale para modales
-- [x] Microinteracciones (hover states)
+# BSC
+NEXT_PUBLIC_BSC_RPC=https://bsc-dataseed1.binance.org
 
-### Accesibilidad
-- [ ] WCAG 2.1 AA compliant
-- [ ] Soporte para lectores de pantalla
-- [ ] Navegación por teclado
-- [ ] Etiquetas ARIA
+# Polygon
+NEXT_PUBLIC_POLYGON_RPC=https://polygon-rpc.com
+
+# Solana
+NEXT_PUBLIC_SOLANA_RPC=https://api.mainnet-beta.solana.com
+```
+
+### RPCs Privados (Opcionales - Mejor rendimiento)
+```env
+# Alchemy (https://alchemy.com)
+NEXT_PUBLIC_ALCHEMY_ETHEREUM_RPC=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
+NEXT_PUBLIC_ALCHEMY_POLYGON_RPC=https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
+
+# Infura (https://infura.io)
+NEXT_PUBLIC_INFURA_ETHEREUM_RPC=https://mainnet.infura.io/v3/YOUR_KEY
+
+# QuickNode (https://quicknode.com)
+NEXT_PUBLIC_QUICKNODE_BSC_RPC=YOUR_QUICKNODE_BSC_URL
+```
+
+### APIs Necesarias para Metadata
+```env
+# Exploradores de Blockchain (https://etherscan.io, etc)
+ETHERSCAN_API_KEY=your_etherscan_key        # Metadata y verificación de contratos
+BSCSCAN_API_KEY=your_bscscan_key            # Metadata y verificación de contratos
+POLYGONSCAN_API_KEY=your_polygonscan_key    # Metadata y verificación de contratos
+
+# Solana (Opcionales - Para datos adicionales)
+SOLSCAN_API_KEY=your_solscan_key            # Metadata detallada
+BIRDEYE_API_KEY=your_birdeye_key            # Precios en tiempo real
+```
+
+### Límites y Recomendaciones
+- **RPCs Públicos**:
+  - Límite: ~30-50 requests/segundo
+  - Pueden ser inestables en momentos de alta carga
+  - Recomendados solo para desarrollo
+
+- **RPCs Privados**:
+  - Límite: Según plan (100-1000+ requests/segundo)
+  - Conexiones WebSocket disponibles
+  - Recomendados para producción
+
+- **APIs de Exploradores**:
+  - Etherscan Free: 5 calls/segundo
+  - BSCScan Free: 5 calls/segundo
+  - Solscan Free: 30 calls/minuto
+
+## 📁 Estructura del Proyecto
+
+```
+src/
+├── app/                    # App Router (Next.js 14)
+├── components/            # Componentes React
+│   ├── ui/              # Componentes base (shadcn)
+│   ├── icons/          # Iconos del sistema
+│   ├── layout/         # Componentes de layout
+│   ├── providers/      # Providers de React
+│   ├── token/          # Componentes específicos de tokens
+│   ├── wallet/         # Componentes de wallet
+│   ├── error-boundary.tsx
+│   ├── network-selector.tsx
+│   ├── theme-provider.tsx
+│   ├── theme-toggle.tsx
+│   ├── token-updates.tsx
+│   └── websocket-status.tsx
+│
+├── config/              # Configuraciones
+│   └── ...            # Archivos de configuración
+│
+├── features/           # Lógica de negocio principal
+│   ├── network/       # Gestión de redes blockchain
+│   └── tokens/        # Gestión de tokens y lógica relacionada
+│
+├── lib/               # Utilidades y helpers
+│   └── ...          # Funciones utilitarias
+│
+├── types/             # Definiciones de TypeScript
+│   └── ...          # Tipos y interfaces
+│
+└── utils/             # Utilidades generales
+    └── ...          # Funciones de utilidad
+
+```
+
+### 📝 Organización del Código
+
+1. **Componentes**:
+   - `components/ui/`: Componentes base de shadcn/ui
+   - `components/token/`: Componentes específicos para visualización de tokens
+   - `components/wallet/`: Componentes relacionados con la wallet
+   - Componentes individuales en la raíz para funcionalidades específicas
+
+2. **Features**:
+   - `network/`: Todo lo relacionado con la gestión de redes blockchain
+   - `tokens/`: Lógica central de la aplicación para el tracking de tokens
+
+3. **Utilidades y Configuración**:
+   - `config/`: Configuraciones globales
+   - `lib/`: Funciones helper y utilidades
+   - `utils/`: Utilidades generales
+   - `types/`: Definiciones de tipos TypeScript
+
+### 🔍 Convenciones de Código
+
+- **Componentes**: PascalCase (ej: `TokenCard.tsx`)
+- **Hooks**: camelCase con prefix 'use' (ej: `useTokens.ts`)
+- **Utilidades**: camelCase (ej: `formatAddress.ts`)
+- **Tipos**: PascalCase con suffix relevante (ej: `TokenType.ts`)
 
 ## 📈 Roadmap
 1. **Fase 1** (Q1 2024): 
@@ -750,219 +493,4 @@ Este script:
 - Ejecuta tests de integración
 - Genera un reporte de cambios
 
-## 🛠 Stack Tecnológico
-- **Frontend**:
-  - Next.js 14 (App Router)
-  - TypeScript
-  - TailwindCSS
-  - shadcn/ui (componentes)
-
-- **Blockchain Integration**:
-  - Web3.js
-  - @solana/web3.js
-  - Ethers.js
-
-- **APIs y Servicios**:
-  - Solscan/Birdeye (Solana)
-  - Etherscan
-  - BSCScan
-  - APIs de DEX relevantes
-
-## ⚙️ Conexiones Blockchain
-
-### RPCs Públicos (No requieren API key)
-```env
-# Ethereum
-NEXT_PUBLIC_ETHEREUM_RPC=https://eth.llamarpc.com
-
-# BSC
-NEXT_PUBLIC_BSC_RPC=https://bsc-dataseed1.binance.org
-
-# Polygon
-NEXT_PUBLIC_POLYGON_RPC=https://polygon-rpc.com
-
-# Solana
-NEXT_PUBLIC_SOLANA_RPC=https://api.mainnet-beta.solana.com
 ```
-
-### RPCs Privados (Opcionales - Mejor rendimiento)
-```env
-# Alchemy (https://alchemy.com)
-NEXT_PUBLIC_ALCHEMY_ETHEREUM_RPC=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
-NEXT_PUBLIC_ALCHEMY_POLYGON_RPC=https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
-
-# Infura (https://infura.io)
-NEXT_PUBLIC_INFURA_ETHEREUM_RPC=https://mainnet.infura.io/v3/YOUR_KEY
-
-# QuickNode (https://quicknode.com)
-NEXT_PUBLIC_QUICKNODE_BSC_RPC=YOUR_QUICKNODE_BSC_URL
-```
-
-### APIs Necesarias para Metadata
-```env
-# Exploradores de Blockchain (https://etherscan.io, etc)
-ETHERSCAN_API_KEY=your_etherscan_key        # Metadata y verificación de contratos
-BSCSCAN_API_KEY=your_bscscan_key            # Metadata y verificación de contratos
-POLYGONSCAN_API_KEY=your_polygonscan_key    # Metadata y verificación de contratos
-
-# Solana (Opcionales - Para datos adicionales)
-SOLSCAN_API_KEY=your_solscan_key            # Metadata detallada
-BIRDEYE_API_KEY=your_birdeye_key            # Precios en tiempo real
-```
-
-### Límites y Recomendaciones
-- **RPCs Públicos**:
-  - Límite: ~30-50 requests/segundo
-  - Pueden ser inestables en momentos de alta carga
-  - Recomendados solo para desarrollo
-
-- **RPCs Privados**:
-  - Límite: Según plan (100-1000+ requests/segundo)
-  - Conexiones WebSocket disponibles
-  - Recomendados para producción
-
-- **APIs de Exploradores**:
-  - Etherscan Free: 5 calls/segundo
-  - BSCScan Free: 5 calls/segundo
-  - Solscan Free: 30 calls/minuto
-
-## 📁 Estructura del Proyecto
-```
-src/
-├── app/                    # App router y páginas
-├── components/             # Componentes React
-│   ├── ui/                # Componentes de interfaz
-│   └── blockchain/        # Componentes específicos de blockchain
-├── lib/                   # Utilidades y configuraciones
-│   ├── constants/         # Constantes y configuración
-│   ├── hooks/            # Custom hooks
-│   └── utils/            # Funciones utilitarias
-└── services/             # Servicios externos
-    └── blockchain/       # Integraciones blockchain
-```
-
-## 📋 Requisitos del Sistema
-- Node.js >= 18.0.0
-- NPM >= 9.0.0
-- Memoria: 4GB RAM mínimo
-- Almacenamiento: 1GB disponible
-
-## 🔧 Configuración y Desarrollo
-1. Clonar el repositorio
-```bash
-git clone [repo-url]
-cd memescanner
-```
-
-2. Instalar dependencias
-```bash
-npm install
-```
-
-3. Configurar variables de entorno
-```bash
-cp .env.example .env.local
-# Editar .env.local con tus claves
-```
-
-4. Iniciar desarrollo
-```bash
-npm run dev
-```
-
-## 🧪 Testing
-```bash
-# Tests unitarios
-npm run test
-
-# Tests e2e
-npm run test:e2e
-
-# Verificar tipos
-npm run type-check
-```
-
-## 🐛 Troubleshooting
-
-### Problemas Comunes
-1. **Error: Network Connection Failed**
-   - Verificar RPC endpoints
-   - Comprobar límites de rate
-   - Usar VPN si es necesario
-
-2. **Error: API Key Invalid**
-   - Verificar formato de API keys
-   - Comprobar límites de uso
-   - Regenerar keys si es necesario
-
-### Soporte
-- GitHub Issues: [link]
-- Discord: [link]
-- Email: support@memescanner.com
-
-## 📈 Roadmap
-1. **Fase 1** (Q1 2024): 
-   - Setup inicial y soporte Solana
-   - Implementación de criterios básicos
-   - UI/UX básica
-
-2. **Fase 2** (Q2 2024): 
-   - Integración multi-chain
-   - Sistema de scoring
-   - Análisis de contratos
-
-3. **Fase 3** (Q3 2024): 
-   - Sistema de alertas
-   - Análisis social
-   - API pública
-
-4. **Fase 4** (Q4 2024): 
-   - Machine Learning para detección
-   - Predicciones automáticas
-   - Dashboard avanzado
-
-## 🔐 Seguridad y Limitaciones
-- Rate limits en APIs: 5 calls/segundo
-- Máximo de tokens monitoreados: 1000/chain
-- Tiempo mínimo de análisis: 24h
-- Refresh rate de datos: 5 minutos
-
-## 🤝 Contribución
-Las contribuciones son bienvenidas. Por favor, revisa las guías de contribución antes de empezar.
-
-## 📄 Licencia
-MIT License
-
-## 📝 Estado del Desarrollo UI
-
-### Componentes Principales
-- [x] Header completo
-  - [x] Selector de red (Ethereum, BSC, etc.)
-  - [x] Selector tema claro/oscuro
-  - [x] Conectar wallet (Web3Modal v4)
-  - [ ] Menú de navegación
-
-### Componentes Avanzados
-- [ ] Tablas ordenables y filtrables
-- [ ] Gráficos de velas (TradingView)
-- [ ] Heatmaps de actividad
-- [ ] Indicadores técnicos
-
-### Estados de Carga
-- [ ] Skeletons para datos
-- [ ] Spinners para acciones
-- [ ] Progress bars para procesos
-- [ ] Placeholders para imágenes
-
-### Animaciones y Transiciones
-- [x] Transiciones de tema
-- [ ] Fade in/out de elementos
-- [ ] Slide para drawers
-- [ ] Scale para modales
-- [x] Microinteracciones (hover states)
-
-### Accesibilidad
-- [ ] WCAG 2.1 AA compliant
-- [ ] Soporte para lectores de pantalla
-- [ ] Navegación por teclado
-- [ ] Etiquetas ARIA

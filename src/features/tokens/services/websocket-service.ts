@@ -14,6 +14,26 @@ export class WebSocketService {
   private readonly minReconnectInterval = 5000; // Mínimo 5 segundos entre reconexiones
   private processedEvents: Set<string> = new Set();
 
+  // Lista de tokens establecidos que queremos excluir
+  private readonly ESTABLISHED_TOKENS = new Set([
+    '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', // CAKE
+    '0x7083609fce4d1d8dc0c979aab8c869ea2c873402', // DOT
+    '0x7950865a9140cb519342433146ed5b40c6f210f7', // BAND
+    '0x3ee2200efb3400fabb9aacf31297cbdd1d435d47', // ADA
+    '0xba2ae424d960c26247dd6c32edc70b295c744c43', // DOGE
+    '0x2170ed0880ac9a755fd29b2688956bd959f933f8', // ETH
+    '0x1d2f0da169ceb9fc7b3144628db156f3f6c60dbe', // XRP
+    '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', // USDC
+    '0x55d398326f99059ff775485246999027b3197955', // USDT
+    '0xe9e7cea3dedca5984780bafc599bd69add087d56', // BUSD
+    '0x1af3f329e8be154074d8769d1ffa4ee058b1dbc3', // DAI
+  ].map(address => address.toLowerCase()));
+
+  private isEstablishedToken(address: string): boolean {
+    return this.ESTABLISHED_TOKENS.has(address.toLowerCase()) ||
+           address.toLowerCase() === ADDRESSES.WBNB.toLowerCase();
+  }
+
   static getInstance() {
     if (!WebSocketService.instance) {
       WebSocketService.instance = new WebSocketService();
@@ -254,9 +274,22 @@ export class WebSocketService {
         const token1 = '0x' + result.topics[2].slice(26).toLowerCase();
         const pairAddress = '0x' + result.data.slice(26, 66).toLowerCase();
 
+        // Verificar si alguno de los tokens es un token establecido
+        if (this.isEstablishedToken(token0) && this.isEstablishedToken(token1)) {
+          console.log(`[${this.formatTime(now)}][WebSocket] Par ignorado: ambos tokens son establecidos`, {
+            token0,
+            token1
+          });
+          return;
+        }
+
+        // Determinar cuál token es el nuevo (no establecido)
+        const newToken = this.isEstablishedToken(token0) ? token1 : token0;
+
         console.log(`[${this.formatTime(now)}][WebSocket] Nuevo par detectado:`, {
           token0,
           token1,
+          newToken,
           pairAddress,
           blockNumber: result.blockNumber,
           transactionHash: result.transactionHash
@@ -268,6 +301,7 @@ export class WebSocketService {
               ...result,
               token0,
               token1,
+              newToken,
               pairAddress
             }
           }
