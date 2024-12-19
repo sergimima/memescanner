@@ -1,5 +1,6 @@
 import { TokenBase } from "@/features/tokens/types/token"
 import { formatUSD } from "@/utils/format"
+import { WatchlistButton } from "@/features/watchlist/components/WatchlistButton"
 
 interface TokenCardProps {
   token: TokenBase;
@@ -10,7 +11,7 @@ export function TokenCard({
   token,
   onAnalyze
 }: TokenCardProps) {
-  const { name, symbol, score, analysis } = token
+  const { name, symbol, score, analysis, address } = token
   const liquidity = analysis?.liquidityUSD || 0
   const holders = analysis?.holders?.length || 0
   const totalScore = score?.total || 0
@@ -23,17 +24,20 @@ export function TokenCard({
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{name}</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">{symbol}</p>
           </div>
-          {onAnalyze && (
-            <button 
-              onClick={(e) => {
-                e.preventDefault()
-                onAnalyze()
-              }}
-              className="text-sm px-3 py-1 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900"
-            >
-              Analizar
-            </button>
-          )}
+          <div className="flex gap-2">
+            <WatchlistButton tokenAddress={address} />
+            {onAnalyze && (
+              <button 
+                onClick={(e) => {
+                  e.preventDefault()
+                  onAnalyze()
+                }}
+                className="text-sm px-3 py-1 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900"
+              >
+                Analizar
+              </button>
+            )}
+          </div>
         </div>
         
         <div className="space-y-3">

@@ -29,16 +29,6 @@ export function Navbar() {
                   Inicio
                 </Link>
                 <Link
-                  href="/trending"
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    isActive("/trending")
-                      ? "bg-primary text-primary-foreground"
-                      : "text-foreground hover:bg-muted"
-                  }`}
-                >
-                  Trending
-                </Link>
-                <Link
                   href="/watchlist"
                   className={`px-3 py-2 rounded-md text-sm font-medium ${
                     isActive("/watchlist")

@@ -52,3 +52,18 @@ export function formatPercentage(value: number): string {
     maximumFractionDigits: 2
   }).format(value / 100)
 }
+
+export function formatPrice(value: string | number): string {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  
+  if (num < 0.000001) {
+    return num.toExponential(6);
+  } else if (num < 1) {
+    return num.toFixed(8);
+  }
+  
+  return num.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6
+  });
+}

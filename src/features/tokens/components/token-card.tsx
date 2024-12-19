@@ -8,6 +8,8 @@ import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { RefreshCw } from "lucide-react"
 import { formatNumber } from "@/lib/utils"
+import { formatUSD } from "@/utils/format"
+import { WatchlistButton } from "@/features/watchlist/components/WatchlistButton"
 
 interface TokenCardProps {
   token: TokenBase
